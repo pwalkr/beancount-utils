@@ -8,7 +8,9 @@ language syntax
 
 import argparse
 import csv
+import re
 import sys
+import yaml
 
 
 parser = argparse.ArgumentParser()
@@ -19,15 +21,23 @@ parser.add_argument('input',
                     help="input csv (default stdin or '-')")
 default_account = 'Liabilities:Credit:Citibank'
 parser.add_argument('--account',
-                    default=default_account,
                     help="name of posting account (default {})".format(default_account))
+parser.add_argument('--config',
+                    type=argparse.FileType('r'),
+                    help="configuration file")
 args = parser.parse_args()
 
 
 txn_template = """\
-{date} * "{description}"
+{date} {flag} "{payee}" "{narration}"
+  memo: "{memo}"
   {account}  {amount} USD\
 """
+
+
+config = yaml.safe_load(args.config) if args.config else {}
+account = args.account if args.account else config.get('account', default_account)
+payables = config.get('payables',[])
 
 
 for entry in csv.DictReader(args.input):
@@ -36,9 +46,21 @@ for entry in csv.DictReader(args.input):
     elif entry['Credit']:
         amount = entry['Credit'].replace('-', '')
     date = "{2}-{0}-{1}".format(*entry['Date'].split('/'))
+
+    txn = {}
+    for payable in payables:
+        if re.search(payable['re'], entry['Description'], flags=re.IGNORECASE):
+            txn = payable
+
     print(txn_template.format(
-        account=args.account,
+        account=account,
+        amount=amount,
         date=date,
-        description=entry['Description'],
-        amount=amount)
-        + '\n')
+        flag=txn.get('flag','*'),
+        memo=entry['Description'],
+        narration=txn.get('narration',''),
+        payee=txn.get('payee',entry['Description'])))
+    if 'expense_account' in txn:
+        print('  {}\n'.format(txn['expense_account']))
+    else:
+        print()
