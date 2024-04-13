@@ -73,6 +73,8 @@ class PostCounter():
                                 self.mismatched.append(entry)
 
     def report(self):
+        newCount = 0
+        mmCount = 0
         ep = EntryPrinter()
         if self.new:
             print("; Transactions to add:\n")
@@ -81,6 +83,7 @@ class PostCounter():
                 if not item['entry'] in unique:
                     unique.append(item['entry'])
                     print(ep(item['entry']))
+                    newCount+=1
         if self.mismatched:
             print("; Mismatched transactions:\n")
             unique = []
@@ -88,6 +91,9 @@ class PostCounter():
                 if not entry in unique:
                     unique.append(entry)
                     print(textwrap.indent(ep(entry), '; '))
+                    mmCount+=1
+        if newCount or mmCount:
+            print("; +{}\n; -{}\n; total: {}".format(newCount, mmCount, newCount | mmCount))
 
 
 def parse_beans(stream):
