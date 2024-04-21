@@ -30,8 +30,8 @@ args = parser.parse_args()
 
 txn_template = """\
 {date} {flag} "{payee}" "{narration}"
-  memo: "{memo}"
-  {account}  {amount} USD\
+  {account}  {amount} USD
+    memo: "{memo}"\
 """
 
 
