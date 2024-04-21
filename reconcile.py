@@ -10,6 +10,7 @@ be imported as well as any existing postings that do not appear in the input
 
 import argparse
 import textwrap
+import re
 import sys
 from beancount import loader
 from beancount.core.data import Transaction
@@ -27,6 +28,8 @@ def parse_args():
                         type=argparse.FileType('r'),
                         help="list of new transactions to reconcile (default stdin)")
     parser.add_argument("--account", help="account to reconcile")
+    parser.add_argument('--include-subaccounts', action=argparse.BooleanOptionalAction,
+                        help="include subaccounts when matching existing transaction postings")
     return parser.parse_args()
 
 
@@ -36,9 +39,10 @@ class PostCounter():
     new = []
     mismatched = []
 
-    def __init__(self, incoming, existing, account):
+    def __init__(self, incoming, existing, account, subaccounts):
         self.account = account
         self.existing = existing
+        self.subaccounts = subaccounts
         self.incoming = incoming
 
     def digest(self):
@@ -62,15 +66,16 @@ class PostCounter():
             if isinstance(entry, Transaction):
                 if entry.date >= self.date_start and entry.date <= self.date_end:
                     for posting in entry.postings:
-                        if posting.account == self.account:
-                            found = False
-                            for ing in self.new:
-                                if ing['amount'] == posting.units.number:
-                                    self.new.remove(ing)
-                                    found = True
-                                    break
-                            if not found:
-                                self.mismatched.append(entry)
+                        if (self.subaccounts and re.match(self.account, posting.account) or
+                            not self.subaccounts and posting.account == self.account):
+                                found = False
+                                for ing in self.new:
+                                    if ing['amount'] == posting.units.number:
+                                        self.new.remove(ing)
+                                        found = True
+                                        break
+                                if not found:
+                                    self.mismatched.append(entry)
 
     def report(self):
         newCount = 0
@@ -105,6 +110,6 @@ if __name__ == "__main__":
     args = parse_args()
     incoming = parse_beans(args.incoming)
     existing = parse_beans(args.existing)
-    pc = PostCounter(incoming, existing, args.account)
+    pc = PostCounter(incoming, existing, args.account, args.include_subaccounts)
     pc.digest()
     pc.report()
