@@ -67,9 +67,16 @@ for line in text_body.splitlines():
                 if re.search(payable['re'], txn_payee, flags=re.IGNORECASE):
                     txn = payable
 
+            if parts[0] == 'Debit-':
+                amount = '-' + parts[1]
+            elif parts[0] == 'Deposit+':
+                amount = parts[1]
+            else:
+                raise Exception('Unexpected amount category: {}'.format(parts[0]))
+
             print(txn_template.format(
                 account=account,
-                amount=parts[1],
+                amount=amount,
                 date=txn_date,
                 flag=txn.get('flag','*'),
                 memo=txn_payee,
