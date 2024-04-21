@@ -41,14 +41,14 @@ reader = PdfReader(args.input)
 parts = []
 
 # Ignore header/footer per https://pypdf.readthedocs.io/en/stable/user/extract-text.html#example-1-ignore-header-and-footer
-def visitor_body(text, cm, tm, font_dict, font_size):
-    y = cm[5]
-    if y > 50 and y < 720:
+def visitor_body(text, cm, tm, fd, fs):
+    #print("cm={}\ntm={}\nfs={}\n{}\n".format(cm, tm, fs, text))
+    if fs == 9.38:
         parts.append(text)
 
 for page in reader.pages:
-    #page.extract_text(visitor_text=visitor_body)
-    parts.append(page.extract_text())
+    page.extract_text(visitor_text=visitor_body)
+    #parts.append(page.extract_text())
 
 text_body = "".join(parts)
 
