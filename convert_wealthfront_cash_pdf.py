@@ -26,7 +26,7 @@ args = parser.parse_args()
 
 
 txn_template = """\
-{date} {flag} "{payee}" "{narration}"
+{date} {flag} "{payee}" {narration}
   memo: "{memo}"
   {account}  {amount} USD\
 """
@@ -74,13 +74,18 @@ for line in text_body.splitlines():
             else:
                 raise Exception('Unexpected amount category: {}'.format(parts[0]))
 
+            narration='"{}"'.format(txn.get('narration',''))
+            for tag in txn.get('tags', []):
+                narration += ' #' + tag
+
+
             print(txn_template.format(
                 account=account,
                 amount=amount,
                 date=txn_date,
                 flag=txn.get('flag','*'),
                 memo=txn_payee,
-                narration=txn.get('narration',''),
+                narration=narration,
                 payee=txn.get('payee',txn_payee)))
             if 'expense_account' in txn:
                 print('  {}'.format(txn['expense_account']))
