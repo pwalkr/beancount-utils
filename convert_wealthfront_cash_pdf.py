@@ -60,7 +60,7 @@ txn_payee = None
 prev_line = None
 for line in text_body.splitlines():
     if txn_date and txn_payee:
-        parts = line.split(' $')
+        parts = re.split(r'\s\$', line)
         if len(parts) == 2:
             txn = {}
             for payable in payables:
@@ -76,11 +76,8 @@ for line in text_body.splitlines():
                 narration=txn.get('narration',''),
                 payee=txn.get('payee',txn_payee)))
             if 'expense_account' in txn:
-                print('  {}\n'.format(txn['expense_account']))
-            else:
-                print()
-        else:
-            print("Close? ({}???)\n{}\n{}\n".format(len(parts),prev_line, line))
+                print('  {}'.format(txn['expense_account']))
+            print()
         txn_date = None
         txn_payee = None
         prev_line = None
