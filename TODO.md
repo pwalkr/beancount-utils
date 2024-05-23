@@ -1,3 +1,4 @@
+- rework using [beangulp](https://github.com/beancount/beangulp) framework
 - docs
 - unit tests
 - split import-config translations into "embellish" or other intermediate
