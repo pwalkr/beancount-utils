@@ -14,6 +14,8 @@ measure of "works"). If you need a more powerful or compliant OFX importer
 please consider either writing one or contributing changes. Also, this importer
 does its own very basic parsing; a better one would probably use (and depend on)
 the ofxparse module (see https://sites.google.com/site/ofxparse/).
+
+Based on https://github.com/beancount/beangulp/blob/1d9d3d5/examples/importers/ofx.py
 """
 __copyright__ = "Copyright (C) 2016  Martin Blais"
 __license__ = "GNU GPLv2"
@@ -65,10 +67,7 @@ class Importer(beangulp.Importer):
         self.balance_type = balance_type
 
     def identify(self, filepath):
-        # Match for a compatible MIME type.
-        if mimetypes.guess_type(filepath) not in {'application/x-ofx',
-                                                  'application/vnd.intu.qbo',
-                                                  'application/vnd.intu.qfx'}:
+        if not filepath.lower().endswith(".ofx"):
             return False
 
         # Match the account id.
@@ -272,31 +271,22 @@ def build_transaction(stmttrn, flag, account, currency):
     # Find the date.
     date = parse_ofx_time(find_child(stmttrn, 'dtposted')).date()
 
-    # There's no distinct payee.
-    payee = None
-
-    # Construct a description that represents all the text content in the node.
-    name = find_child(stmttrn, 'name', saxutils.unescape)
-    memo = find_child(stmttrn, 'memo', saxutils.unescape)
-
-    # Remove memos duplicated from the name.
-    if memo == name:
-        memo = None
+    payee = find_child(stmttrn, 'name', saxutils.unescape)
+    # Save in meta as description, per statements
+    description = payee
 
     # Add the transaction type to the description, unless it's not useful.
     trntype = find_child(stmttrn, 'trntype', saxutils.unescape)
     if trntype in ('DEBIT', 'CREDIT'):
         trntype = None
 
-    narration = ' / '.join(filter(None, [name, memo, trntype]))
-
     # Create a single posting for it; the user will have to manually categorize
     # the other side.
     number = find_child(stmttrn, 'trnamt', D)
     units = amount.Amount(number, currency)
-    posting = data.Posting(account, units, None, None, None, None)
+    posting = data.Posting(account, units, None, None, None, {'description': description})
 
     # Build the transaction with a single leg.
     fileloc = data.new_metadata('<build_transaction>', 0)
-    return data.Transaction(fileloc, date, flag, payee, narration,
+    return data.Transaction(fileloc, date, flag, payee, None,
                             data.EMPTY_SET, data.EMPTY_SET, [posting])
