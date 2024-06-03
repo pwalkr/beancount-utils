@@ -1,10 +1,12 @@
 beancount==2.3.6
+beangulp @ git+https://github.com/beancount/beangulp.git@61479575c8d2a0c9b7478e6dec765d507b97ebae
 beautifulsoup4==4.12.3
 bottle==0.12.25
 cachetools==5.3.3
 certifi==2024.2.2
 chardet==5.2.0
 charset-normalizer==3.3.2
+click==8.1.7
 google-api-core==2.18.0
 google-api-python-client==2.125.0
 google-auth==2.29.0
@@ -14,8 +16,10 @@ httplib2==0.22.0
 idna==3.7
 iniconfig==2.0.0
 lxml==5.2.1
+ofxtools==0.9.5
 packaging==24.0
 pdfminer2==20151206
+petl==1.7.15
 pluggy==1.4.0
 ply==3.11
 proto-plus==1.23.0
