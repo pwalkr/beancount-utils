@@ -13,8 +13,9 @@ import yaml
 class Decorator:
     payables = []
 
-    def __init__(self, config_yaml):
+    def __init__(self, config_yaml, exclude=None):
         self.config_yaml = config_yaml
+        self.exclude = (lambda x:False) if exclude is None else exclude
 
     def prime(self):
         with open(self.config_yaml, 'r') as file:
@@ -26,7 +27,7 @@ class Decorator:
 
     def decorate_all(self, entries):
         for entry in entries:
-            if isinstance(entry, Transaction):
+            if isinstance(entry, Transaction) and not self.exclude(entry):
                 entry = self.decorate(entry)
             yield entry
 
