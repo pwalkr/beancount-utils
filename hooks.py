@@ -27,24 +27,25 @@ class Decorator:
 
     def decorate_all(self, entries):
         for entry in entries:
-            if isinstance(entry, Transaction) and not self.exclude(entry):
+            if not self.exclude(entry):
                 entry = self.decorate(entry)
             yield entry
 
     def decorate(self, entry):
-        for payable in self.payables:
-            if re.search(payable['re'], entry.payee, flags=re.IGNORECASE):
-                if 'expense_account' in payable:
-                    entry.postings.append(Posting(
-                        payable['expense_account'],
-                        -entry.postings[0].units,
-                        None, None, None, None))
-                if 'narration' in payable:
-                    entry = entry._replace(narration=payable['narration'])
-                if 'payee' in payable:
-                    entry = entry._replace(payee=payable['payee'])
-                if 'tags' in payable:
-                    entry = entry._replace(tags=entry.tags.union(payable['tags']))
+        if isinstance(entry, Transaction):
+            for payable in self.payables:
+                if re.search(payable['re'], entry.payee, flags=re.IGNORECASE):
+                    if 'expense_account' in payable:
+                        entry.postings.append(Posting(
+                            payable['expense_account'],
+                            -entry.postings[0].units,
+                            None, None, None, None))
+                    if 'narration' in payable:
+                        entry = entry._replace(narration=payable['narration'])
+                    if 'payee' in payable:
+                        entry = entry._replace(payee=payable['payee'])
+                    if 'tags' in payable:
+                        entry = entry._replace(tags=entry.tags.union(payable['tags']))
         return entry
 
 

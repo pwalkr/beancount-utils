@@ -51,7 +51,8 @@ class Importer(beangulp.Importer):
     """An importer for Open Financial Exchange files."""
 
     def __init__(self, acctid_regexp, account, basename=None,
-                 balance_type=BalanceType.DECLARED):
+                 balance_type=BalanceType.DECLARED,
+                 decorate=lambda entry:entry):
         """Create a new importer posting to the given account.
 
         Args:
@@ -65,6 +66,7 @@ class Importer(beangulp.Importer):
         self.importer_account = account
         self.basename = basename
         self.balance_type = balance_type
+        self.decorate = decorate
 
     def identify(self, filepath):
         if not filepath.lower().endswith(".ofx"):
@@ -95,8 +97,12 @@ class Importer(beangulp.Importer):
         """Extract a list of partially complete transactions from the file."""
         with open(filepath) as fd:
             soup = bs4.BeautifulSoup(fd, 'lxml')
-        return extract(soup, filepath, self.acctid_regexp, self.importer_account,
+        entries = extract(soup, filepath, self.acctid_regexp, self.importer_account,
                        flags.FLAG_OKAY, self.balance_type)
+        if self.decorate is not None:
+            return [self.decorate(entry) for entry in entries]
+        else:
+            return entries
 
 
 def extract(soup, filename, acctid_regexp, account, flag, balance_type):
