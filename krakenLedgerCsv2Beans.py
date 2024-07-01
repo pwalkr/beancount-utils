@@ -26,6 +26,7 @@ parser.add_argument('--account',
 parser.add_argument('--currency',
                     default='USD',
                     help="name of base currency")
+parser.add_argument('--strip-stake', default=True, action=argparse.BooleanOptionalAction, help="Strip .S from staking transactions. This will mess with balances.")
 args = parser.parse_args()
 
 
@@ -44,7 +45,7 @@ for entry in csv.DictReader(args.input):
         amount += fee
     else:
         amount -= fee
-    commodity = entry['asset']
+    commodity = entry['asset'] if not args.strip_stake else re.sub('\\.S$', '', entry['asset'])
     date = datetime.datetime.strptime(entry['time'], "%Y-%m-%d %H:%M:%S")
 
     if entry['type'] == 'trade':
@@ -59,6 +60,9 @@ for entry in csv.DictReader(args.input):
 
     if fee > 0:
         decoration += '\n  fee: {}'.format(fee)
+
+    if commodity != entry['asset']:
+        decoration += '\n  staked: "{}"'.format(entry['asset'])
 
     print(txn_template.format(
         account="{}:{}".format(args.account, commodity),
