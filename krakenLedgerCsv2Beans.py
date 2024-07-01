@@ -39,10 +39,11 @@ txn_template = """\
 
 for entry in csv.DictReader(args.input):
     amount = float(entry['amount'])
+    fee = float(entry['fee'])
     if amount >= 0:
-        amount += float(entry['fee'])
+        amount += fee
     else:
-        amount -= float(entry['fee'])
+        amount -= fee
     commodity = entry['asset']
     date = datetime.datetime.strptime(entry['time'], "%Y-%m-%d %H:%M:%S")
 
@@ -55,6 +56,9 @@ for entry in csv.DictReader(args.input):
         decoration = "{{0 # {0} {1}}}".format(entry['amountusd'], args.currency)
     else:
         decoration = "{}" + " @@ {} {}".format(entry['amountusd'].replace('-', ''), args.currency)
+
+    if fee > 0:
+        decoration += '\n  fee: {}'.format(fee)
 
     print(txn_template.format(
         account="{}:{}".format(args.account, commodity),
