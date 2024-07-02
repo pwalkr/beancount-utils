@@ -26,12 +26,15 @@ parser.add_argument('--account',
 parser.add_argument('--currency',
                     default='USD',
                     help="name of base currency")
+parser.add_argument('--staked-income-account',
+                    default='Income:Interest',
+                    help="posting account to use for staking income")
 parser.add_argument('--combine-staked', help='combine staked ".S" assets for simplified account structure', action=argparse.BooleanOptionalAction)
 args = parser.parse_args()
 
 
 txn_template = """\
-{date} * "Kraken" "{narration}"
+{date} * "Kraken" "{narration}"{staked_income_posting}
   {account}  {amount} {commodity} {decoration}
 
 {dateb} balance {account}  {balance} {commodity}
@@ -87,5 +90,6 @@ for entry in csv.DictReader(args.input):
         # Set balance at start of next day
         dateb=(date+datetime.timedelta(days=1)).strftime("%Y-%m-%d"),
         decoration=decoration,
-        narration=narration
+        narration=narration,
+        staked_income_posting = "\n  " + args.staked_income_account if entry['type'] == 'staking' else ""
         ))
