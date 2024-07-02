@@ -26,6 +26,7 @@ parser.add_argument('--account',
 parser.add_argument('--currency',
                     default='USD',
                     help="name of base currency")
+parser.add_argument('--combine-staked', help='combine staked ".S" assets for simplified account structure', action=argparse.BooleanOptionalAction)
 args = parser.parse_args()
 
 
@@ -37,15 +38,29 @@ txn_template = """\
 """
 
 
+# Balance database for joining staked + unstaked assets
+bdb = {}
+
+
 for entry in csv.DictReader(args.input):
     amount = float(entry['amount'])
+    #balance = float(re.sub('\\.?0+$', '', entry['balance']))
+    balance = float(entry['balance'])
+    asset = entry['asset']
+    commodity = re.sub('\\.S$', '', asset)
+    commodity_staked = commodity + '.S'
+    date = datetime.datetime.strptime(entry['time'], "%Y-%m-%d %H:%M:%S")
     fee = float(entry['fee'])
+
     if amount >= 0:
         amount += fee
     else:
         amount -= fee
-    commodity = entry['asset']
-    date = datetime.datetime.strptime(entry['time'], "%Y-%m-%d %H:%M:%S")
+
+    if args.combine_staked:
+        # Store current balance in db before combining staked/unstaked balance
+        bdb[asset] = balance
+        balance = bdb.get(commodity, 0) + bdb.get(commodity_staked, 0)
 
     if entry['type'] == 'trade':
         narration = "{} {}".format('Buy' if amount >= 0 else 'Sell', commodity)
@@ -60,11 +75,13 @@ for entry in csv.DictReader(args.input):
     if fee > 0:
         decoration += '\n  fee: {}'.format(fee)
 
+    if commodity != entry['asset']:
+        decoration += '\n  staked: "{}"'.format(entry['asset'])
+
     print(txn_template.format(
-        account="{}:{}".format(args.account, commodity),
+        account="{}:{}".format(args.account, asset if not args.combine_staked else commodity),
         amount=amount,
-        # Remove trailing zeros: 0.00000000 to just 0
-        balance=re.sub('\\.?0+$', '', entry['balance']),
+        balance=balance,
         commodity=commodity,
         date=date.strftime("%Y-%m-%d"),
         # Set balance at start of next day
