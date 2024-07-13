@@ -49,7 +49,7 @@ class Decorator:
         return entry
 
 
-OUT_OF_PLACE = '__OUT_OF_PLACE__'
+OUT_OF_PLACE = 'OUT_OF_PLACE'
 
 
 def outofplace(extracts, existing):
