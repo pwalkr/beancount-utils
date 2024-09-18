@@ -34,7 +34,7 @@ bean_template = """\
     memo: "{memo}"
 """
 def get_bean_str(txn, account, flag):
-    date = txn.dtposted.strftime("%Y-%m-%d")
+    date = txn.dtuser.strftime("%Y-%m-%d")
     return bean_template.format(
         account=account,
         amount=txn.trnamt,
