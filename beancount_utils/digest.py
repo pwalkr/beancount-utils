@@ -145,7 +145,7 @@ def digest(incoming, existing, account, window, decorations):
     return incoming
 
 
-if __name__ == "__main__":
+def main():
     args = parse_args()
 
     # Load existing and incoming transactions
@@ -165,3 +165,6 @@ if __name__ == "__main__":
     # Output the reconciled transactions
     extract.print_extracted_entries([(args.incoming, incoming, None, None)], sys.stdout)
 
+
+if __name__ == "__main__":
+    main()
