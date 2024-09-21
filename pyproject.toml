@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "beancount-utils"
+version = "0.1.0"
+description = "Utilities for working with beancount plain-text accounting"
+readme = "README.md"
+dependencies = [
+    'PyYAML >= 6.0',
+    'beancount >= 3.0.0',
+]
+
+[project.urls]
+"Source" = "https://github.com/pwalkr/beancount-utils"
+
+[project.scripts]
+digest = "beancount_utils.digest:main"
