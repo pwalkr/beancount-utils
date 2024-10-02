@@ -38,6 +38,8 @@ from beancount.core import flags
 import beangulp
 from beangulp import mimetypes
 
+from beancount_utils.deduplicate import mark_duplicate_entries
+
 
 class BalanceType(enum.Enum):
     """Type of Balance directive to be inserted."""
@@ -103,6 +105,9 @@ class Importer(beangulp.Importer):
             return [self.decorate(entry) for entry in entries]
         else:
             return entries
+
+    def deduplicate(self, entries, existing):
+        mark_duplicate_entries(entries, existing, self.importer_account)
 
 
 def extract(soup, filename, acctid_regexp, account, flag, balance_type):
