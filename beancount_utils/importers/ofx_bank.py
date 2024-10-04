@@ -54,7 +54,7 @@ class Importer(beangulp.Importer):
 
     def __init__(self, acctid_regexp, account, basename=None,
                  balance_type=BalanceType.DECLARED,
-                 decorate=lambda entry:entry):
+                 decorate=None):
         """Create a new importer posting to the given account.
 
         Args:
@@ -101,13 +101,13 @@ class Importer(beangulp.Importer):
             soup = bs4.BeautifulSoup(fd, 'lxml')
         entries = extract(soup, filepath, self.acctid_regexp, self.importer_account,
                        flags.FLAG_OKAY, self.balance_type)
-        if self.decorate is not None:
-            return [self.decorate(entry) for entry in entries]
-        else:
-            return entries
+        return entries
 
     def deduplicate(self, entries, existing):
         mark_duplicate_entries(entries, existing, self.importer_account)
+        # Decorate after marking dupes but before adding out-of-place transactions
+        if self.decorate:
+            self.decorate(entries)
         entries.extend(extract_out_of_place(existing, entries, self.importer_account))
 
 
