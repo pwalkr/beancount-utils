@@ -3,6 +3,34 @@ from beancount.core import data
 from beangulp.extract import DUPLICATE
 
 
+def extract_out_of_place(existing, entries, account, window=datetime.timedelta(days=2)):
+    incoming_postings = wrap_postings(entries, account)
+    context = list(yield_context(existing, entries, account))
+    for posting in wrap_postings(context, account):
+        for candidate in incoming_postings:
+            if posting.match(candidate, window):
+                # Mark similar to beangulp.extract.mark_duplicate_entries
+                posting.entry.meta[DUPLICATE] = candidate.entry
+                break
+    return [
+        entry._replace(tags=entry.tags.union({'OUT_OF_PLACE'}))
+        for entry in context
+        if not entry.meta.pop(DUPLICATE, False)
+    ]
+
+
+def yield_context(existing, entries, account):
+    txns = list(data.filter_txns(entries))
+    open_date = txns[0].date
+    close_date = txns[-1].date
+    for entry in data.filter_txns(existing):
+        if entry.date >= open_date and entry.date <= close_date:
+            for posting in entry.postings:
+                if posting.account == account:
+                    yield entry
+                    break
+
+
 def mark_duplicate_entries(entries, context, account, window=datetime.timedelta(days=2)):
     context_postings = wrap_postings(context, account)
     for posting in wrap_postings(entries, account):
