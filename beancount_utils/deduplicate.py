@@ -49,7 +49,7 @@ def wrap_postings(entries, account):
     return [
         PostingWrapper(posting, entry)
         for entry in data.filter_txns(entries)
-        for posting in entry.postings if posting.account == account
+        for posting in entry.postings if posting.account.startswith(account)
     ]
 
 
