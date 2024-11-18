@@ -3,6 +3,8 @@ from decimal import Decimal
 import re
 
 from pypdf import PdfReader
+from pypdf_table_extraction import read_pdf
+import tabula
 
 from beancount.core.data import Amount, Balance, new_metadata
 import beangulp
@@ -28,16 +30,19 @@ class Importer(beangulp.Importer):
 
         text = pdf_to_text(filepath)
         if text:
-            return re.search('Account Number: [0-9A-Za-z-\s]+{}[^\w]'.format(self.last4acct), text) is not None
+            return re.search(r'Account Number: [0-9A-Za-z-\s]+{}[^\w]'.format(self.last4acct), text) is not None
 
     def account(self, filepath):
         return self.base_account
 
     def extract(self, filepath, existing):
         entries = []
-        text = pdf_to_text(filepath)
-        print(text)
-        #entries.append(self._extract_balance(filepath, text))
+        tables = read_pdf(filepath, flavor="stream", pages="all")
+        print(tables.__repr__())
+        for i, table in enumerate(tables):
+            print(f"{i}", table.df)
+        #dfs = tabula.read_pdf(filepath, pages='all', silent=True)
+        #print(dfs)
         return entries
 
     def _extract_balance(self, filepath, text):
