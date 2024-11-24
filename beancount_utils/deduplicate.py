@@ -58,7 +58,9 @@ class PostingWrapper():
         self.posting = posting
         self.entry = entry
         self.date = entry.date
+        self.account = posting.account
         self.amount = posting.units.number
+        self.currency = posting.units.currency
         self._match = None
 
     def match(self, ip, window):
@@ -66,7 +68,7 @@ class PostingWrapper():
             return False
 
         if abs(self.date - ip.date) <= window:
-            if self.amount == ip.amount:
+            if self.account == ip.account and self.amount == ip.amount and self.currency == ip.currency:
                 self._match = ip
                 ip._match = self
                 return True
