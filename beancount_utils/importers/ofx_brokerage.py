@@ -37,7 +37,7 @@ class CommodityResolver():
 class Importer(beangulp.Importer):
     """An importer for brokerage statements."""
 
-    def __init__(self, base_account, currency, match_fid, cash_leaf=None, div_account="Income:Dividends", fee_account="Expenses:Financial:Fees", int_account="Income:Interest", bond_per_x=100, to_commodity=None, pnl_account="Income:PnL", to_leaf=lambda ticker: ticker):
+    def __init__(self, base_account, currency, match_fid, cash_leaf=None, div_account="Income:Dividends", fee_account="Expenses:Financial:Fees", int_account="Income:Interest", bond_per_x=100, to_commodity=None, pnl_account="Income:PnL", open_on_buy_debt=True, to_leaf=lambda ticker: ticker):
         self.base_account = base_account
         self.currency = currency
         self.match_fid = match_fid
@@ -50,6 +50,8 @@ class Importer(beangulp.Importer):
         self.int_account = int_account
         self.pnl_account = pnl_account
         self.bond_per_x = bond_per_x
+        # Bonds are awkward to keep in the same account open just-in-time
+        self.open_on_buy_debt = open_on_buy_debt
 
     def identify(self, filepath):
         mimetype, encoding = mimetypes.guess_type(filepath)
@@ -87,28 +89,23 @@ class Importer(beangulp.Importer):
                 #tmeta = new_metadata(filepath, 0)
                 narr = txn.name if hasattr(txn, 'name') else txn.memo
                 postings = []
-                pmeta = {"memo": txn.memo}
 
                 if hasattr(txn, "fees") and txn.fees >= 0.01:
                     postings.append(Posting(self.fee_account, Amount(txn.fees, self.currency), None, None, None, None))
 
                 # https://github.com/csingley/ofxtools/blob/master/ofxtools/models/invest/transactions.py
                 if type(txn) is model.BUYDEBT:
-                    print("{}\n".format(txn.__repr__()))
-                    ticker = cr.commodity(txn)
-                    pact = self.full_account(cr.leaf(txn))
-                    pamt = Amount(txn.units/self.bond_per_x, ticker)
-                    pcost = Cost(txn.unitprice, self.currency, None, None)
-                    entries.append(Open(new_metadata(filepath, 0), tdate, pact, None, None))
-                    postings.append(Posting(self.cash_account, Amount(txn.total, self.currency), None, None, None, None))
-                    postings.append(Posting(pact, pamt, pcost, None, None, pmeta))
+                    self.extract_buydebt(txn, cr, postings)
+                    if self.open_on_buy_debt:
+                        bact = self.full_account(cr.leaf(txn))
+                        entries.append(Open(self.generic_meta(), tdate, bact, None, None))
                 elif type(txn) is model.BUYSTOCK:
                     ticker = cr.commodity(txn)
                     camt = Amount(txn.total, self.currency)
                     pamt = Amount(txn.units, ticker)
                     pcost = Cost(txn.unitprice, self.currency, None, None)
                     postings.append(Posting(self.cash_account, camt, None, None, None, None))
-                    postings.append(Posting(self.full_account(cr.leaf(txn)), pamt, pcost, None, None, pmeta))
+                    postings.append(Posting(self.full_account(cr.leaf(txn)), pamt, pcost, None, None, self.generic_meta()))
                 elif type(txn) is model.INCOME:
                     pamt = Amount(Decimal(txn.total), self.currency)
                     if "Interest" in txn.memo:
@@ -117,43 +114,57 @@ class Importer(beangulp.Importer):
                         postings.append(Posting(self.div_account, -pamt, None, None, None, None))
                     else:
                         raise Exception("Unknown transaction {}".format(txn))
-                    postings.append(Posting(self.cash_account, pamt, None, None, None, pmeta))
+                    postings.append(Posting(self.cash_account, pamt, None, None, None, self.generic_meta()))
                 elif type(txn) is model.INVBANKTRAN:
                     pamt = Amount(Decimal(txn.trnamt), self.currency)
-                    postings.append(Posting(self.cash_account, pamt, None, None, None, pmeta))
+                    postings.append(Posting(self.cash_account, pamt, None, None, None, self.generic_meta()))
                 elif type(txn) is model.SELLSTOCK:
-                    ticker = cr.commodity(txn)
-                    pamt = Amount(Decimal(txn.units), ticker)
-                    pcost = CostSpec(None, None, None, None, None, None)
-                    price = Amount(txn.unitprice, self.currency)
-                    postings.append(Posting(self.pnl_account, None, None, None, None, None))
-                    postings.append(Posting(self.cash_account, Amount(txn.total, self.currency), None, None, None, None))
-                    postings.append(Posting(self.full_account(cr.leaf(txn)), pamt, pcost, price, None, pmeta))
+                    self.extract_sellstock(txn, cr, postings)
                 elif type(txn) is model.TRANSFER:
                     #if "Dividend" in txn.memo # TODO: handle stock split
                     ticker = cr.commodity(txn)
                     pamt = Amount(Decimal(txn.units), ticker)
                     pact = self.full_account(cr.leaf(txn))
-                    postings.append(Posting(pact, pamt, None, None, None, pmeta))
+                    postings.append(Posting(pact, pamt, None, None, None, self.generic_meta()))
 
                 entries.append(Transaction(tmeta, tdate, '*', None, narr, frozenset(), frozenset(), postings))
         return entries
 
+    def extract_buydebt(self, transaction, cr, postings):
+        # From cash account
+        postings.append(Posting(self.cash_account, Amount(transaction.total, self.currency), None, None, None, None))
+        # To commodity account
+        account = self.full_account(cr.leaf(transaction))
+        pamt = Amount(transaction.units/self.bond_per_x, cr.commodity(transaction))
+        pcost = Cost(transaction.unitprice, self.currency, None, None)
+        postings.append(Posting(account, pamt, pcost, None, None, self.generic_meta()))
+
     def extract_position_balance(self, position, cr, entries):
         # TODO handle POSDEBT
         if type(position) is POSSTOCK:
-            #print("{}\n".format(position.__repr__()))
             account = self.full_account(cr.leaf(position))
             amount = Amount(position.units, cr.commodity(position))
             date = position.dtpriceasof.date()
             entries.append(Balance(self.generic_meta(), date, account, amount, None, None))
 
     def extract_security_price(self, security, cr):
-        #print("{}\n".format(security.__repr__()))
         ticker = cr.commodity(security)
         date = security.dtasof.date()
         amount = Amount(security.unitprice, self.currency)
         return Price(self.generic_meta(), date, ticker, amount)
+
+    def extract_sellstock(self, transaction, cr, postings):
+        # PnL to absorb difference between lot cost basis and proceeds
+        postings.append(Posting(self.pnl_account, None, None, None, None, None))
+        # From commodity account
+        amount = Amount(Decimal(transaction.units), cr.commodity(transaction))
+        cost = CostSpec(None, None, None, None, None, None)
+        price = Amount(transaction.unitprice, self.currency)
+        account = self.full_account(cr.leaf(transaction))
+        postings.append(Posting(account, amount, cost, price, None, self.generic_meta()))
+        # To cash account
+        postings.append(Posting(self.cash_account, Amount(transaction.total, self.currency), None, None, None, None))
+
 
     def full_account(self, leaf):
         if leaf:
