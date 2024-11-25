@@ -44,14 +44,15 @@ class Importer(importer.Importer):
                 amount = round(-Decimal(amount), 2)
                 units = data.Amount(amount, self.currency)
 
-                meta = data.new_metadata(filepath, 0)
+                meta = data.new_metadata(filepath, 0, {
+                    'claim': entry['Claim Number'],
+                    'provider': payee
+                })
 
-                postings = [
-                        data.Posting(account, units, None, None, None, {
-                            'claim': entry['Claim Number'],
-                            'provider': payee
-                        })
-                    ]
+                postings = [data.Posting(account, units, None, None, None, None)]
+
+                entries.append(data.Transaction(meta, date.date(), flag,
+                               payee, narration, frozenset(), frozenset(), postings))
 
                 if self.insurance_account:
                     insamt = rc.sub('', entry["Total Charges"])
@@ -59,11 +60,10 @@ class Importer(importer.Importer):
                     insamt = round(-Decimal(insamt), 2)
                     insamt = insamt - amount
                     insamt = data.Amount(insamt, self.currency)
-                    postings.append(data.Posting(self.insurance_account, insamt, None, None, None, None))
+                    inspost = [data.Posting(self.insurance_account, insamt, None, None, None, None)]
+                    entries.append(data.Transaction(dict(meta), date.date(), flag,
+                                   payee, narration, frozenset(), frozenset(), inspost))
 
-                txn = data.Transaction(meta, date.date(), flag,
-                                       payee, narration, frozenset(), frozenset(), postings)
-                entries.append(txn)
         return entries
 
     def deduplicate(self, entries, existing):
