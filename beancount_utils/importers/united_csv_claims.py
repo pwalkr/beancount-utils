@@ -9,11 +9,12 @@ import re
 
 
 class Importer(importer.Importer):
-    def __init__(self, account, currency, insurance_account=None, decorate=None):
-        self.importer_account = account
+    def __init__(self, base_account, currency, insurance_account=None, decorate=None, provider_leaf=None):
+        self.base_account = base_account
         self.currency = currency
         self.insurance_account = insurance_account
         self.decorate = decorate
+        self.provider_leaf = provider_leaf
 
     def identify(self, filepath):
         if not path.basename(filepath).startswith('MedicalClaimSummary'):
@@ -26,7 +27,7 @@ class Importer(importer.Importer):
         return head.startswith('Claim Number,Patient Name,Date Visited')
 
     def account(self, filepath):
-        return self.importer_account
+        return self.base_account
 
     def extract(self, filepath, existing):
         entries = []
@@ -36,7 +37,10 @@ class Importer(importer.Importer):
                 flag = '*'
                 date = datetime.strptime(entry['Date Visited'], '%Y-%m-%d')
                 year = date.strftime('%Y')
-                account = self.importer_account.format(year=year)
+                account = self.full_account({
+                    "provider": entry['Visited Provider'],
+                    "patient": entry['Visited Provider'],
+                })
                 payee = entry['Visited Provider']
                 narration = entry['Patient Name']
                 amount = rc.sub('', entry['Your Responsibility'])
@@ -65,6 +69,13 @@ class Importer(importer.Importer):
                                    payee, narration, frozenset(), frozenset(), inspost))
 
         return entries
+
+    def full_account(self, entry):
+        if self.provider_leaf:
+            leaf = self.provider_leaf(entry)
+            return self.base_account + ':' + leaf
+        else:
+            return self.base_account
 
     def deduplicate(self, entries, existing):
         super().deduplicate(entries, existing)
