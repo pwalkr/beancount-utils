@@ -98,14 +98,14 @@ class Importer(beangulp.Importer):
                     self.extract_buydebt(txn, cr, postings)
                     if self.open_on_buy_debt:
                         bact = self.full_account(cr.leaf(txn))
-                        entries.append(Open(self.generic_meta(), tdate, bact, None, None))
+                        entries.append(Open(self.generic_meta(filepath), tdate, bact, None, None))
                 elif type(txn) is model.BUYSTOCK:
                     ticker = cr.commodity(txn)
                     camt = Amount(txn.total, self.currency)
                     pamt = Amount(txn.units, ticker)
                     pcost = Cost(txn.unitprice, self.currency, None, None)
                     postings.append(Posting(self.cash_account, camt, None, None, None, None))
-                    postings.append(Posting(self.full_account(cr.leaf(txn)), pamt, pcost, None, None, self.generic_meta()))
+                    postings.append(Posting(self.full_account(cr.leaf(txn)), pamt, pcost, None, None, self.generic_meta(filepath)))
                 elif type(txn) is model.INCOME:
                     pamt = Amount(Decimal(txn.total), self.currency)
                     if "Interest" in txn.memo:
@@ -173,8 +173,8 @@ class Importer(beangulp.Importer):
             # Using monolithic non-leafed account
             return self.base_account
 
-    def generic_meta(self):
-        return new_metadata(None, None)
+    def generic_meta(self, filepath=""):
+        return new_metadata(filepath, 0)
 
     def deduplicate(self, entries, existing):
         mark_duplicate_entries(entries, existing, self.base_account)
