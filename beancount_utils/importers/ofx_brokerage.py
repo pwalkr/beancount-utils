@@ -118,6 +118,8 @@ class Importer(beangulp.Importer):
                 elif type(txn) is model.INVBANKTRAN:
                     pamt = Amount(Decimal(txn.trnamt), self.currency)
                     postings.append(Posting(self.cash_account, pamt, None, None, None, self.generic_meta()))
+                elif type(txn) is model.SELLDEBT:
+                    self.extract_selldebt(txn, cr, postings)
                 elif type(txn) is model.SELLSTOCK:
                     self.extract_sellstock(txn, cr, postings)
                 elif type(txn) is model.TRANSFER:
@@ -135,9 +137,9 @@ class Importer(beangulp.Importer):
         postings.append(Posting(self.cash_account, Amount(transaction.total, self.currency), None, None, None, None))
         # To commodity account
         account = self.full_account(cr.leaf(transaction))
-        pamt = Amount(transaction.units/self.bond_per_x, cr.commodity(transaction))
+        amount = Amount(transaction.units/self.bond_per_x, cr.commodity(transaction))
         pcost = Cost(transaction.unitprice, self.currency, None, None)
-        postings.append(Posting(account, pamt, pcost, None, None, self.generic_meta()))
+        postings.append(Posting(account, amount, pcost, None, None, self.generic_meta()))
 
     def extract_position_balance(self, position, cr, entries):
         # TODO handle POSDEBT
@@ -152,6 +154,18 @@ class Importer(beangulp.Importer):
         date = security.dtasof.date()
         amount = Amount(security.unitprice, self.currency)
         return Price(self.generic_meta(), date, ticker, amount)
+
+    def extract_selldebt(self, transaction, cr, postings):
+        # PnL to absorb difference between lot cost basis and proceeds
+        postings.append(Posting(self.pnl_account, None, None, None, None, None))
+        # From commodity account
+        amount = Amount(transaction.units/self.bond_per_x, cr.commodity(transaction))
+        cost = CostSpec(None, None, None, None, None, None)
+        price = Amount(transaction.unitprice, self.currency)
+        account = self.full_account(cr.leaf(transaction))
+        postings.append(Posting(account, amount, cost, price, None, self.generic_meta()))
+        # To cash account
+        postings.append(Posting(self.cash_account, Amount(transaction.total, self.currency), None, None, None, None))
 
     def extract_sellstock(self, transaction, cr, postings):
         # PnL to absorb difference between lot cost basis and proceeds
