@@ -39,7 +39,7 @@ class Importer(importer.Importer):
                 year = date.strftime('%Y')
                 account = self.full_account({
                     "provider": entry['Visited Provider'],
-                    "patient": entry['Visited Provider'],
+                    "patient": entry['Patient Name'],
                 })
                 payee = entry['Visited Provider']
                 narration = entry['Patient Name']
