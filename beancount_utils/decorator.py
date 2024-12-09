@@ -3,20 +3,32 @@ import yaml
 from beancount.core.data import Posting, Transaction
 
 
+def load_yaml(filepath):
+    with open(filepath, 'r') as file:
+        return yaml.safe_load(file)
+
+
 class Decorator:
     def __init__(self, decorations, exclude=None):
         self.decorations = decorations
         self.exclude = (lambda x: False) if exclude is None else exclude
 
     @classmethod
-    def from_yaml(cls, filepath):
-        with open(filepath, 'r') as file:
-            decorations = yaml.safe_load(file)
+    def from_yaml(cls, *args):
+        decorations = []
+        for filepath in args:
+            decorations += load_yaml(filepath)
         return cls.from_list(decorations)
 
     @classmethod
     def from_list(cls, decorations):
         return cls([Decoration(decoration) for decoration in decorations])
+
+    def append_yaml(self, filepath):
+        self.append_list(load_yaml(filepath))
+
+    def append_list(self, decorations):
+        self.decorations = self.decorations + decorations
 
     def decorate(self, entries):
         for idx, entry in enumerate(entries):
