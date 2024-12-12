@@ -37,7 +37,7 @@ class CommodityResolver():
 class Importer(beangulp.Importer):
     """An importer for brokerage statements."""
 
-    def __init__(self, base_account, currency, match_fid, cash_leaf=None, div_account="Income:Dividends", fee_account="Expenses:Financial:Fees", int_account="Income:Interest", bond_per_x=100, to_commodity=None, pnl_account="Income:PnL", open_on_buy_debt=True, to_leaf=lambda ticker: ticker):
+    def __init__(self, base_account, currency, match_fid, cash_leaf=None, div_account="Income:Dividends", fee_account="Expenses:Financial:Fees", int_account="Income:Interest", bond_per_x=100, to_commodity=None, pnl_account="Income:PnL", open_on_buy_debt=True, to_leaf=lambda ticker: ticker, file_account=None):
         self.base_account = base_account
         self.currency = currency
         self.match_fid = match_fid
@@ -47,6 +47,7 @@ class Importer(beangulp.Importer):
         self.cash_account = self.full_account(cash_leaf if cash_leaf else currency)
         self.div_account = div_account
         self.fee_account = fee_account
+        self.file_account = file_account
         self.int_account = int_account
         self.pnl_account = pnl_account
         self.bond_per_x = bond_per_x
@@ -63,7 +64,7 @@ class Importer(beangulp.Importer):
         return ofx.signon.fi.fid == self.match_fid
 
     def account(self, filepath):
-        return self.base_account
+        return self.file_account
 
     def extract(self, filepath, existing):
         entries = []
@@ -78,9 +79,11 @@ class Importer(beangulp.Importer):
             entries.append(self.extract_security_price(security, cr))
 
         for stmt in ofx.statements:
+            print("\n\n{}\n\n".format(stmt.__repr__()))
             asofdate = stmt.dtasof.date()
-            for invpos in stmt.invposlist:
-                self.extract_position_balance(invpos, cr, entries)
+            if 'invposlist' in stmt:
+                for invpos in stmt.invposlist:
+                    self.extract_position_balance(invpos, cr, entries)
 
             for txn in stmt.transactions:
                 tdate = txn.dttrade.date() if hasattr(txn, 'dttrade') else txn.dtposted.date()
@@ -108,10 +111,12 @@ class Importer(beangulp.Importer):
                     postings.append(Posting(self.full_account(cr.leaf(txn)), pamt, pcost, None, None, self.generic_meta(filepath)))
                 elif type(txn) is model.INCOME:
                     pamt = Amount(Decimal(txn.total), self.currency)
-                    if "Interest" in txn.memo:
+                    if "interest" in txn.memo.lower():
                         postings.append(Posting(self.int_account, -pamt, None, None, None, None))
-                    elif "Dividend" in txn.memo:
+                    elif "dividend" in txn.memo.lower():
                         postings.append(Posting(self.div_account, -pamt, None, None, None, None))
+                    elif "cap gain" in txn.memo.lower():
+                        pass
                     else:
                         raise Exception("Unknown transaction {}".format(txn))
                     postings.append(Posting(self.cash_account, pamt, None, None, None, self.generic_meta()))
