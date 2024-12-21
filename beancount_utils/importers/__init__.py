@@ -1,6 +1,6 @@
 import beancount_utils.importers.kraken_ledger_json
 import beancount_utils.importers.merrill_ofx
+import beancount_utils.importers.ofx_brokerage
 import beancount_utils.importers.simplefin
 import beancount_utils.importers.singlefin
 import beancount_utils.importers.united_csv_claims
-import beancount_utils.importers.ofx_brokerage
