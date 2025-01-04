@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import beangulp
 
-from beancount.core.data import Amount, Posting, Transaction, new_metadata
+from beancount.core.data import Amount, Balance, Posting, Transaction, new_metadata
 from beancount.core.position import CostSpec
 
 from beancount_utils.deduplicate import mark_duplicate_entries, extract_out_of_place
@@ -51,6 +51,7 @@ class Importer(beangulp.Importer):
             narration = extract_narration(group, self.base_currency)
             postings = extract_postings(group, self.base_account, self.base_currency, self.pnl_account)
             entries.append(Transaction(meta, date.date(), '*', None, narration, frozenset(), frozenset(), postings))
+            entries.extend(extract_balances(group, filepath, date, self.base_account))
 
         return entries
 
@@ -82,6 +83,16 @@ def extract_narration(group, base_currency):
             else:
                 narration = "Sell " + entry['asset']
     return narration
+
+def extract_balances(group, filepath, date, base_account):
+    # Dates are considered the start of a day, must succeed transaction date
+    date = date + datetime.timedelta(days=1)
+
+    for ledger in group:
+        meta = new_metadata(filepath, 0)
+        account = base_account + ':' + ledger['asset']
+        amount = Amount(Decimal(ledger['balance']), ledger['asset'])
+        yield Balance(meta, date.date(), account, amount, None, None)
 
 def extract_postings(group, base_account, base_currency, pnl_account):
     postings = []
