@@ -13,6 +13,7 @@ from beancount_utils.deduplicate import mark_duplicate_entries, extract_out_of_p
 
 assets = {
     "XETH": "ETH",
+    "XLTC": "LTC",
     "XXBT": "BTC",
     "XXDG": "DOGE",
     "ZUSD": "USD",
