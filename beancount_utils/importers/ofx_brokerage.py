@@ -15,35 +15,17 @@ from beangulp.testing import main
 from beancount_utils.deduplicate import mark_duplicate_entries, extract_out_of_place
 
 
-class CommodityResolver():
-    def __init__(self, to_commodity, to_leaf):
-        self.to_commodity = to_commodity
-        self.to_leaf = to_leaf
-        self.commodities = {}
-        self.leafs = {}
-
-    def load_securities(self, ofx_securities):
-        for security in ofx_securities:
-            self.leafs[security.secid.uniqueid] = self.to_leaf(security.ticker)
-            self.commodities[security.secid.uniqueid] = self.to_commodity(security.ticker)
-
-    def commodity(self, position):
-        return self.commodities[position.secid.uniqueid]
-
-    def leaf(self, position):
-        return self.leafs[position.secid.uniqueid]
+# Prefix used to denote raw CUSIP commodities (bonds, no ticker)
+bond_prefix = 'C.'
 
 
 class Importer(beangulp.Importer):
     """An importer for brokerage statements."""
 
-    def __init__(self, base_account, currency, match_fid, cash_leaf=None, div_account="Income:Dividends", fee_account="Expenses:Financial:Fees", int_account="Income:Interest", bond_per_x=100, to_commodity=None, pnl_account="Income:PnL", open_on_buy_debt=True, to_leaf=lambda ticker: ticker, file_account=None):
+    def __init__(self, base_account, currency, match_fid, cash_leaf=None, div_account="Income:Dividends", fee_account="Expenses:Financial:Fees", int_account="Income:Interest", bond_per_x=100, pnl_account="Income:PnL", open_on_buy_debt=True, file_account=None):
         self.base_account = base_account
         self.currency = currency
         self.match_fid = match_fid
-        self.to_leaf = to_leaf
-        # Bond tickers are just CUSIP, invalid beancount commodities - add prefix
-        self.to_commodity = to_commodity if to_commodity else lambda ticker : "C."+ticker if re.match('[0-9]', ticker) else ticker
         self.cash_account = self.full_account(cash_leaf if cash_leaf else currency)
         self.div_account = div_account
         self.fee_account = fee_account
@@ -66,24 +48,26 @@ class Importer(beangulp.Importer):
     def account(self, filepath):
         return self.file_account
 
+    def get_ticker(self, txn):
+        return self.tickers[txn.secid.uniqueid]
+
     def extract(self, filepath, existing):
         entries = []
         parser = OFXTree()
         parser.parse(filepath)
         ofx = parser.convert()
 
-        cr = CommodityResolver(self.to_commodity, self.to_leaf)
-        cr.load_securities(ofx.securities)
+        self.extract_tickers(ofx.securities)
 
         for security in ofx.securities:
-            entries.append(self.extract_security_price(security, cr))
+            entries.append(self.extract_security_price(security))
 
         for stmt in ofx.statements:
             print("\n\n{}\n\n".format(stmt.__repr__()))
             asofdate = stmt.dtasof.date()
             if 'invposlist' in stmt:
                 for invpos in stmt.invposlist:
-                    self.extract_position_balance(invpos, cr, entries)
+                    self.extract_position_balance(invpos, entries)
 
             for txn in stmt.transactions:
                 tdate = txn.dttrade.date() if hasattr(txn, 'dttrade') else txn.dtposted.date()
@@ -98,17 +82,17 @@ class Importer(beangulp.Importer):
 
                 # https://github.com/csingley/ofxtools/blob/master/ofxtools/models/invest/transactions.py
                 if type(txn) is model.BUYDEBT:
-                    self.extract_buydebt(txn, cr, postings)
+                    self.extract_buydebt(txn, postings)
                     if self.open_on_buy_debt:
-                        bact = self.full_account(cr.leaf(txn))
+                        bact = self.full_account(self.get_ticker(txn))
                         entries.append(Open(self.generic_meta(filepath), tdate, bact, None, None))
                 elif type(txn) is model.BUYSTOCK:
-                    ticker = cr.commodity(txn)
+                    ticker = self.get_ticker(txn)
                     camt = Amount(txn.total, self.currency)
                     pamt = Amount(txn.units, ticker)
                     pcost = Cost(txn.unitprice, self.currency, None, None)
                     postings.append(Posting(self.cash_account, camt, None, None, None, None))
-                    postings.append(Posting(self.full_account(cr.leaf(txn)), pamt, pcost, None, None, self.generic_meta(filepath)))
+                    postings.append(Posting(self.full_account(ticker, pamt, pcost, None, None, self.generic_meta(filepath))))
                 elif type(txn) is model.INCOME:
                     pamt = Amount(Decimal(txn.total), self.currency)
                     if "interest" in txn.memo.lower():
@@ -124,70 +108,87 @@ class Importer(beangulp.Importer):
                     pamt = Amount(Decimal(txn.trnamt), self.currency)
                     postings.append(Posting(self.cash_account, pamt, None, None, None, self.generic_meta()))
                 elif type(txn) is model.SELLDEBT:
-                    self.extract_selldebt(txn, cr, postings)
+                    self.extract_selldebt(txn, postings)
                 elif type(txn) is model.SELLSTOCK:
-                    self.extract_sellstock(txn, cr, postings)
+                    self.extract_sellstock(txn, postings)
                 elif type(txn) is model.TRANSFER:
                     #if "Dividend" in txn.memo # TODO: handle stock split
-                    ticker = cr.commodity(txn)
+                    ticker = self.get_ticker(txn)
                     pamt = Amount(Decimal(txn.units), ticker)
-                    pact = self.full_account(cr.leaf(txn))
+                    pact = self.full_account(self.get_ticker(txn))
                     postings.append(Posting(pact, pamt, None, None, None, self.generic_meta()))
 
                 entries.append(Transaction(tmeta, tdate, '*', None, narr, frozenset(), frozenset(), postings))
         return entries
 
-    def extract_buydebt(self, transaction, cr, postings):
+    def extract_buydebt(self, transaction, postings):
         # From cash account
         postings.append(Posting(self.cash_account, Amount(transaction.total, self.currency), None, None, None, None))
         # To commodity account
-        account = self.full_account(cr.leaf(transaction))
-        amount = Amount(transaction.units/self.bond_per_x, cr.commodity(transaction))
+        account = self.full_account(self.get_ticker(transaction))
+        amount = Amount(transaction.units/self.bond_per_x, self.get_ticker(transaction))
         pcost = Cost(transaction.unitprice, self.currency, None, None)
         postings.append(Posting(account, amount, pcost, None, None, self.generic_meta()))
 
-    def extract_position_balance(self, position, cr, entries):
+    def extract_position_balance(self, position, entries):
         # TODO handle POSDEBT
         if type(position) is POSSTOCK:
-            account = self.full_account(cr.leaf(position))
-            amount = Amount(position.units, cr.commodity(position))
+            account = self.full_account(self.get_ticker(position))
+            amount = Amount(position.units, self.get_ticker(position))
             date = position.dtpriceasof.date()
             entries.append(Balance(self.generic_meta(), date, account, amount, None, None))
 
-    def extract_security_price(self, security, cr):
-        ticker = cr.commodity(security)
+    def extract_security_price(self, security):
+        ticker = self.get_ticker(security)
         date = security.dtasof.date()
         amount = Amount(security.unitprice, self.currency)
         return Price(self.generic_meta(), date, ticker, amount)
 
-    def extract_selldebt(self, transaction, cr, postings):
+    def extract_selldebt(self, transaction, postings):
         # PnL to absorb difference between lot cost basis and proceeds
         postings.append(Posting(self.pnl_account, None, None, None, None, None))
         # From commodity account
-        amount = Amount(transaction.units/self.bond_per_x, cr.commodity(transaction))
+        amount = Amount(transaction.units/self.bond_per_x, self.get_ticker(transaction))
         cost = CostSpec(None, None, None, None, None, None)
         price = Amount(transaction.unitprice, self.currency)
-        account = self.full_account(cr.leaf(transaction))
+        account = self.full_account(self.get_ticker(transaction))
         postings.append(Posting(account, amount, cost, price, None, self.generic_meta()))
         # To cash account
         postings.append(Posting(self.cash_account, Amount(transaction.total, self.currency), None, None, None, None))
 
-    def extract_sellstock(self, transaction, cr, postings):
+    def extract_sellstock(self, transaction, postings):
         # PnL to absorb difference between lot cost basis and proceeds
         postings.append(Posting(self.pnl_account, None, None, None, None, None))
         # From commodity account
-        amount = Amount(Decimal(transaction.units), cr.commodity(transaction))
+        amount = Amount(Decimal(transaction.units), self.get_ticker(transaction))
         cost = CostSpec(None, None, None, None, None, None)
         price = Amount(transaction.unitprice, self.currency)
-        account = self.full_account(cr.leaf(transaction))
+        account = self.full_account(self.get_ticker(transaction))
         postings.append(Posting(account, amount, cost, price, None, self.generic_meta()))
         # To cash account
         postings.append(Posting(self.cash_account, Amount(transaction.total, self.currency), None, None, None, None))
+
+    def extract_tickers(self, ofx_securities):
+        """
+        Extract map of cusip:ticker
+
+        Bonds (and potentially other securities) have no alternative ticker. The
+        CUSIP is not a valid beancount commodity (starting with a number) so these
+        values are prefixed with "C."
+        """
+
+        self.tickers = {}
+        for security in ofx_securities:
+            # Bond tickers are just CUSIP, invalid beancount commodities - add prefix
+            if re.match('[0-9]', security.ticker):
+                self.tickers[security.secid.uniqueid] = bond_prefix+security.ticker
+            else:
+                self.tickers[security.secid.uniqueid] = security.ticker
 
 
     def full_account(self, leaf):
         if leaf:
-            return "{}:{}".format(self.base_account, leaf)
+            return "{}:{}".format(self.base_account, leaf.replace(bond_prefix,''))
         else:
             # Using monolithic non-leafed account
             return self.base_account
