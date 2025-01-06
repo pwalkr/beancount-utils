@@ -84,8 +84,7 @@ class Importer(beangulp.Importer):
                 if type(txn) is model.BUYDEBT:
                     self.extract_buydebt(txn, postings)
                     if self.open_on_buy_debt:
-                        bact = self.full_account(self.get_ticker(txn))
-                        entries.append(Open(self.generic_meta(filepath), tdate, bact, None, None))
+                        self.extract_debt_open(filepath, txn, tdate, entries)
                 elif type(txn) is model.BUYSTOCK:
                     ticker = self.get_ticker(txn)
                     camt = Amount(txn.total, self.currency)
@@ -129,6 +128,26 @@ class Importer(beangulp.Importer):
         amount = Amount(transaction.units/self.bond_per_x, self.get_ticker(transaction))
         pcost = Cost(transaction.unitprice, self.currency, None, None)
         postings.append(Posting(account, amount, pcost, None, None, self.generic_meta()))
+
+    def extract_debt_open(self, filepath, txn, tdate, entries):
+        account = self.full_account(self.get_ticker(txn))
+
+        meta = {}
+
+        match = re.search(r"([A-Za-z]{3} \d{2} \d{4})", txn.memo)
+        if match:
+            maturity_date = datetime.strptime(match.group(1), "%b %d %Y").date()
+            days_to_maturity = (maturity_date - tdate).days
+            total_return_factor = float(txn.units / -txn.total)
+            annualized_yield = ((total_return_factor ** (365 / days_to_maturity)) - 1) * 100
+            meta["maturity"] = maturity_date
+            meta["yield"] = format(annualized_yield, '.2f')
+        match = re.search(r"([\d.]+)%", txn.memo)
+        if match:
+            meta["coupon"] = match.group(1)
+
+        meta = new_metadata(filepath, 0, meta)
+        entries.append(Open(meta, tdate, account, None, None))
 
     def extract_position_balance(self, position, entries):
         # TODO handle POSDEBT
