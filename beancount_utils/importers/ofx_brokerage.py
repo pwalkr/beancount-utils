@@ -22,7 +22,7 @@ bond_prefix = 'C.'
 class Importer(beangulp.Importer):
     """An importer for brokerage statements."""
 
-    def __init__(self, base_account, currency, match_fid, cash_leaf=None, div_account="Income:Dividends", fee_account="Expenses:Financial:Fees", int_account="Income:Interest", bond_per_x=100, pnl_account="Income:PnL", open_on_buy_debt=True, file_account=None):
+    def __init__(self, base_account, currency, match_fid, cash_leaf=None, div_account="Income:Dividends", fee_account="Expenses:Financial:Fees", int_account="Income:Interest", bond_per_x=100, pnl_account=None, open_on_buy_debt=True, file_account=None):
         self.base_account = base_account
         self.currency = currency
         self.match_fid = match_fid
@@ -165,7 +165,8 @@ class Importer(beangulp.Importer):
 
     def extract_selldebt(self, transaction, postings):
         # PnL to absorb difference between lot cost basis and proceeds
-        postings.append(Posting(self.pnl_account, None, None, None, None, None))
+        if self.pnl_account:
+            postings.append(Posting(self.pnl_account, None, None, None, None, None))
         # From commodity account
         amount = Amount(transaction.units/self.bond_per_x, self.get_ticker(transaction))
         cost = CostSpec(None, None, None, None, None, None)
@@ -177,7 +178,8 @@ class Importer(beangulp.Importer):
 
     def extract_sellstock(self, transaction, postings):
         # PnL to absorb difference between lot cost basis and proceeds
-        postings.append(Posting(self.pnl_account, None, None, None, None, None))
+        if self.pnl_account:
+            postings.append(Posting(self.pnl_account, None, None, None, None, None))
         # From commodity account
         amount = Amount(Decimal(transaction.units), self.get_ticker(transaction))
         cost = CostSpec(None, None, None, None, None, None)
