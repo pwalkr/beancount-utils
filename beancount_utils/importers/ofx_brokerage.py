@@ -123,7 +123,12 @@ class Importer(beangulp.Importer):
 
     def extract_buydebt(self, transaction, postings):
         # From cash account
-        postings.append(Posting(self.cash_account, Amount(transaction.total, self.currency), None, None, None, None))
+        cash_amount = transaction.total - transaction.accrdint
+        postings.append(Posting(self.cash_account, Amount(cash_amount, self.currency), None, None, None, None))
+        if transaction.accrdint > 0:
+            postings.append(Posting(self.fee_account, Amount(transaction.accrdint, self.currency), None, None, None, {
+                "description": "Accrued interest",
+            }))
         # To commodity account
         account = self.full_account(self.get_ticker(transaction))
         amount = Amount(transaction.units/self.bond_per_x, self.get_ticker(transaction))
