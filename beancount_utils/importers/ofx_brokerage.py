@@ -97,7 +97,8 @@ class Importer(beangulp.Importer):
                     if "interest" in txn.memo.lower():
                         postings.append(Posting(self.int_account, -pamt, None, None, None, None))
                     elif "dividend" in txn.memo.lower():
-                        postings.append(Posting(self.div_account, -pamt, None, None, None, None))
+                        div_account = self.div_account.format(commodity=self.get_ticker(txn))
+                        postings.append(Posting(div_account, -pamt, None, None, None, None))
                     elif "cap gain" in txn.memo.lower():
                         pass
                     else:
