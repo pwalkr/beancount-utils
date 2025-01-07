@@ -71,9 +71,9 @@ class Importer(beangulp.Importer):
 
             for txn in stmt.transactions:
                 tdate = txn.dttrade.date() if hasattr(txn, 'dttrade') else txn.dtposted.date()
-                tmeta = new_metadata(filepath, 0, {"memo": txn.__repr__()})
+                #tmeta = new_metadata(filepath, 0, {"memo": txn.__repr__()})
                 #tmeta = new_metadata(filepath, 0, {"type": type(txn).__name__})
-                #tmeta = new_metadata(filepath, 0)
+                tmeta = new_metadata(filepath, 0)
                 narr = txn.name if hasattr(txn, 'name') else txn.memo
                 postings = []
 
