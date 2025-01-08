@@ -20,7 +20,7 @@ bond_prefix = 'C.'
 
 
 class Importer(beangulp.Importer):
-    """An importer for brokerage statements."""
+    """A beangulp-based beancount importer for Merrill ofx exports"""
 
     def __init__(self, base_account, currency, match_fid, cash_leaf=None, div_account="Income:Dividends", fee_account="Expenses:Financial:Fees", int_account="Income:Interest", bond_per_x=100, pnl_account=None, open_on_buy_debt=True, file_account=None):
         self.base_account = base_account
