@@ -91,7 +91,7 @@ class Importer(beangulp.Importer):
                     pamt = Amount(txn.units, ticker)
                     pcost = Cost(txn.unitprice, self.currency, None, None)
                     postings.append(Posting(self.cash_account, camt, None, None, None, None))
-                    postings.append(Posting(self.full_account(ticker, pamt, pcost, None, None, self.generic_meta(filepath))))
+                    postings.append(Posting(self.full_account(ticker), pamt, pcost, None, None, self.generic_meta(filepath)))
                 elif type(txn) is model.INCOME:
                     pamt = Amount(Decimal(txn.total), self.currency)
                     if "interest" in txn.memo.lower():
