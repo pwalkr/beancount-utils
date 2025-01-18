@@ -48,6 +48,7 @@ class Decoration:
         self.rec = re.compile(self.re, flags=re.IGNORECASE)
 
         # Optional fields for decoration
+        self.flag = decoration.get('flag')
         self.narration = decoration.get('narration')
         self.payee = decoration.get('payee')
         self.tags = decoration.get('tags')
@@ -63,6 +64,8 @@ class Decoration:
             transaction.postings.append(
                 Posting(self.target_account, -transaction.postings[0].units, None, None, None, None)
             )
+        if self.flag:
+            transaction = transaction._replace(flag=self.flag)
         if self.narration:
             transaction = transaction._replace(narration=self.narration)
         if self.payee:
