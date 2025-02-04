@@ -22,11 +22,12 @@ bond_prefix = 'C.'
 class Importer(beangulp.Importer):
     """A beangulp-based beancount importer for Merrill ofx exports"""
 
-    def __init__(self, base_account, currency, match_fid, cash_leaf=None, div_account="Income:Dividends", fee_account="Expenses:Financial:Fees", int_account="Income:Interest", bond_per_x=100, pnl_account=None, open_on_buy_debt=True, file_account=None):
+    def __init__(self, base_account, currency, match_fid, cash_leaf=None, coupon_account="Income:Coupon", div_account="Income:Dividends", fee_account="Expenses:Financial:Fees", int_account="Income:Interest", bond_per_x=100, pnl_account=None, open_on_buy_debt=True, file_account=None):
         self.base_account = base_account
         self.currency = currency
         self.match_fid = match_fid
         self.cash_account = self.full_account(cash_leaf if cash_leaf else currency)
+        self.coupon_account = coupon_account
         self.div_account = div_account
         self.fee_account = fee_account
         self.file_account = file_account
@@ -95,7 +96,12 @@ class Importer(beangulp.Importer):
                 elif type(txn) is model.INCOME:
                     pamt = Amount(Decimal(txn.total), self.currency)
                     if "interest" in txn.memo.lower():
-                        postings.append(Posting(self.int_account, -pamt, None, None, None, None))
+                        if "bank interest" in txn.memo.lower():
+                            inc_account = self.int_account
+                        else:
+                            inc_account = self.coupon_account.format(cusip=self.get_ticker(txn).replace(bond_prefix,''))
+                        #tmeta = new_metadata(filepath, 0, {"memo": txn.__repr__()})
+                        postings.append(Posting(inc_account, -pamt, None, None, None, None))
                     elif "dividend" in txn.memo.lower():
                         div_account = self.div_account.format(commodity=self.get_ticker(txn))
                         postings.append(Posting(div_account, -pamt, None, None, None, None))
