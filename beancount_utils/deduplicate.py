@@ -27,7 +27,7 @@ def yield_context(existing, entries, account):
         if entry.date >= open_date and entry.date <= close_date:
             for posting in entry.postings:
                 if posting.account == account:
-                    yield entry
+                    yield clone_transaction(entry)
                     break
 
 
@@ -43,6 +43,22 @@ def mark_duplicate_entries(entries, context, account, window=datetime.timedelta(
                     if p is posting.posting:
                         posting.entry.postings[x] = posting.posting._replace(flag='!')
                 break
+
+
+def clone_transaction(entry):
+    postings = []
+    for posting in entry.postings:
+        postings.append(posting._replace())
+
+    return data.Transaction(
+            entry.meta.copy(),
+            entry.date,
+            entry.flag,
+            entry.payee,
+            entry.narration,
+            entry.tags,
+            entry.links,
+            postings)
 
 
 def wrap_postings(entries, account):
