@@ -45,7 +45,10 @@ class Importer(importer.Importer):
                 narration = entry['Patient Name']
                 amount = rc.sub('', entry['Your Responsibility'])
                 amount = amount.replace('(', '-')
-                amount = round(-Decimal(amount), 2)
+                if amount:
+                    amount = round(-Decimal(amount), 2)
+                else:
+                    amount = Decimal(0)
                 units = data.Amount(amount, self.currency)
 
                 meta = data.new_metadata(filepath, 0, {
