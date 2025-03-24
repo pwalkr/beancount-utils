@@ -6,7 +6,7 @@ from ofxtools.Parser import OFXTree
 import ofxtools.models.invest.transactions as model
 from ofxtools.models.invest.positions import POSDEBT, POSSTOCK
 
-from beancount.core.data import Amount, Balance, Open, Posting, Price, Transaction, new_metadata
+from beancount.core.data import Amount, Balance, Close, Open, Posting, Price, Transaction, new_metadata
 from beancount.core.position import Cost, CostSpec
 import beangulp
 from beangulp import mimetypes
@@ -125,7 +125,14 @@ class Importer(beangulp.Importer):
                     postings.append(Posting(pact, pamt, None, None, None, self.generic_meta()))
 
                 entries.append(Transaction(tmeta, tdate, '*', None, narr, frozenset(), frozenset(), postings))
+                if type(txn) is model.SELLDEBT and "Redemption" in txn.memo:
+                    self.append_debt_close(txn, tdate, entries)
         return entries
+
+    def append_debt_close(self, txn, tdate, entries):
+        account = self.full_account(self.get_ticker(txn))
+        meta = self.generic_meta()
+        entries.append(Close(meta, tdate, account))
 
     def extract_buydebt(self, transaction, postings):
         # From cash account
