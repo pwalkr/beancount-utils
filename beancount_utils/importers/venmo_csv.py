@@ -1,7 +1,7 @@
-import csv
+from collections import defaultdict
 from os import path
 import sys
-from itertools import islice
+from beancount.core import data
 from beangulp import mimetypes
 from beangulp.importers import csvbase
 
@@ -10,9 +10,8 @@ from beancount_utils.deduplicate import mark_duplicate_entries, extract_out_of_p
 
 class Importer(csvbase.Importer):
     date = csvbase.Date('Datetime', '%Y-%m-%dT%H:%M:%S')
-    # Used to locate documentational/non-transaction entries
-    date_index = 2
-    payee = csvbase.Columns('From')
+    party_from = csvbase.Columns('From')
+    party_to = csvbase.Columns('To')
     narration = csvbase.Columns('Note')
     amount = csvbase.Amount('Amount (total)', {
         r'\+ \$': '',
@@ -21,33 +20,91 @@ class Importer(csvbase.Importer):
         })
     skiplines = 2
 
-    def read(self, filepath):
-        with open(filepath, encoding=self.encoding) as fd:
-            # Skip header lines.
-            lines = islice(fd, self.skiplines, None)
+    def extract(self, filepath, existing):
+        entries = []
+        balances = defaultdict(list)
+        default_account = self.account(filepath)
 
-            reader = csv.reader(lines, dialect=self.dialect)
+        # Compute the line number of the first data line.
+        offset = int(self.skiplines) + bool(self.names) + 1
 
-            # Map column names to column indices.
-            names = None
-            if self.names:
-                headers = next(reader, None)
-                if headers is None:
-                    raise IndexError("The input file does not contain an header line")
-                names = {name.strip(): index for index, name in enumerate(headers)}
+        for lineno, row in enumerate(self.read(filepath), offset):
+            # Skip empty lines.
+            if not row:
+                continue
 
-            # Construct a class with attribute accessors for the
-            # configured columns that works similarly to a namedtuple.
-            attrs = {}
-            for name, column in self.columns.items():
-                attrs[name] = property(column.getter(names))
-            row = type("Row", (tuple,), attrs)
+            try:
+                tag = getattr(row, "tag", None)
+                tags = {tag} if tag else frozenset()
 
-            # Return data rows.
-            for x in reader:
-                # Ignore documentation fields with empty date
-                if x[self.date_index]:
-                    yield row(x)
+                link = getattr(row, "link", None)
+                links = {link} if link else frozenset()
+
+                # This looks like an exercise in defensive programming
+                # gone too far, but we do not want to depend on any field
+                # being defined other than the essential ones.
+                flag = getattr(row, "flag", self.flag)
+                account = getattr(row, "account", default_account)
+                currency = getattr(row, "currency", self.currency)
+                units = data.Amount(row.amount, currency)
+
+                party_from = getattr(row, "party_from", None)
+                party_to = getattr(row, "party_to", None)
+                if not party_from:
+                    continue
+                # Set payee to "the other party"
+                payee = party_to if row.amount < 0 else party_from
+
+                # Create a transaction.
+                txn = data.Transaction(
+                    self.metadata(filepath, lineno, row),
+                    row.date,
+                    flag,
+                    payee,
+                    row.narration,
+                    tags,
+                    links,
+                    [
+                        data.Posting(account, units, None, None, None, None),
+                    ],
+                )
+
+                # Apply user processing to the transaction.
+                txn = self.finalize(txn, row)
+
+            except Exception as ex:
+                # Report input file location of processing errors. This could
+                # use Exception.add_note() instead, but this is available only
+                # with Python 3.11 and later.
+                raise RuntimeError(
+                    f"Error processing {filepath} line {lineno + 1} with values {row!r}"
+                ) from ex
+
+            # Allow finalize() to reject the row extracted from the current row.
+            if txn is None:
+                continue
+
+            # Add the transaction to the output list.
+            entries.append(txn)
+
+            # Add balance to balances list.
+            balance = getattr(row, "balance", None)
+            if balance is not None:
+                date = row.date + datetime.timedelta(days=1)
+                units = data.Amount(balance, currency)
+                meta = data.new_metadata(filepath, lineno)
+                balances[currency].append(
+                    data.Balance(meta, date, account, units, None, None)
+                )
+
+        if not entries:
+            return []
+
+        # Append balances.
+        for currency, balances in balances.items():
+            entries.append(balances[-1 if order is Order.ASCENDING else 0])
+
+        return entries
 
     def identify(self, filepath):
         if not path.basename(filepath).startswith('Venmo'):
