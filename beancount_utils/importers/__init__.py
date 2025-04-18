@@ -4,3 +4,4 @@ import beancount_utils.importers.merrill_csv
 import beancount_utils.importers.merrill_ofx
 import beancount_utils.importers.simplefin
 import beancount_utils.importers.singlefin
+import beancount_utils.importers.venmo_csv
