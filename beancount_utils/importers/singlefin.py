@@ -51,9 +51,10 @@ class Importer(importer.Importer):
             date = datetime.fromtimestamp(date).date()
             flag = '!' if 'pending' in transaction and transaction['pending'] else '*'
             payee = transaction['payee'] if 'payee' in transaction else transaction['description']
-            narration = transaction['description']
+            # Many of these have absurdly     long                 spaces
+            narration = re.sub(' +', ' ', transaction['description'])
             amount = Amount(Decimal(transaction['amount']), self.currency)
-            postings = [Posting(account, amount, None, None, None, {'description':transaction['description']})]
+            postings = [Posting(account, amount, None, None, None, {'description':narration})]
             entries.append(Transaction(meta, date, flag, payee, narration, frozenset(), frozenset(), postings))
         return entries
 
