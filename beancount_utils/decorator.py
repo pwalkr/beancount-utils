@@ -56,6 +56,8 @@ class Decoration:
         self.target_account = decoration.get('target_account')
 
     def match(self, transaction):
+        if not transaction.payee:
+            return False
         return self.rec.search(transaction.payee) is not None
 
     def decorate(self, transaction):
