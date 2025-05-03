@@ -11,7 +11,7 @@ from beancount.core.position import CostSpec
 from beancount_utils.deduplicate import mark_duplicate_entries, extract_out_of_place
 
 
-assets = {
+assets_remap = {
     "XETH": "ETH",
     "XLTC": "LTC",
     "XXBT": "BTC",
@@ -62,8 +62,10 @@ class Importer(beangulp.Importer):
 
 def sanitize_assets(ledger):
     for tid, entry in ledger.items():
-        if entry['asset'] in assets:
-            entry['asset'] = assets[entry['asset']]
+        # Trim .F, .S, etc.
+        entry['asset'] = entry['asset'].split('.')[0]
+        if entry['asset'] in assets_remap:
+            entry['asset'] = assets_remap[entry['asset']]
         yield tid, entry
 
 def group_ledgers(ledger):
@@ -77,6 +79,8 @@ def group_ledgers(ledger):
 
 def extract_narration(group, base_currency):
     narration = None
+    if len(group) == 1:
+        return "Staked " + group[0]['asset']
     for entry in group:
         if entry['asset'] != base_currency:
             if Decimal(entry['amount']) > 0:
