@@ -10,7 +10,7 @@ readme = "README.md"
 dependencies = [
     'PyYAML >= 6.0',
     'beancount >= 3.0.0',
-    'pypdf' >= 5.1.0',
+    'pypdf >= 5.1.0',
 ]
 
 [project.urls]
