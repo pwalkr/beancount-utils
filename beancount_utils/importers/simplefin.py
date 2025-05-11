@@ -47,22 +47,14 @@ class Importer(importer.Importer):
 
     def extract_account(self, filepath, account, data, entries):
         for transaction in data['transactions']:
-<<<<<<< HEAD
             meta = new_metadata(filepath, 0)
-=======
-            meta = new_metadata(filepath, 0, {'memo':transaction['description']})
->>>>>>> 68feba8 (importers: add simplefin.py)
             date = transaction['transacted_at'] if 'transacted_at' in transaction else transaction['posted']
             date = datetime.fromtimestamp(date).date()
             flag = '!' if 'pending' in transaction and transaction['pending'] else '*'
             payee = transaction['payee'] if 'payee' in transaction else transaction['description']
             narration = transaction['description']
             amount = Amount(Decimal(transaction['amount']), self.currency)
-<<<<<<< HEAD
             postings = [Posting(account, amount, None, None, None, {'description':transaction['description']})]
-=======
-            postings = [Posting(account, amount, None, None, None, None)]
->>>>>>> 68feba8 (importers: add simplefin.py)
             entries.append(Transaction(meta, date, flag, payee, narration, frozenset(), frozenset(), postings))
 
     def deduplicate(self, entries, existing):
