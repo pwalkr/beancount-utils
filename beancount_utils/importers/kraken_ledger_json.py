@@ -7,6 +7,7 @@ import beangulp
 
 from beancount.core.data import Amount, Balance, Posting, Transaction, new_metadata
 from beancount.core.position import CostSpec
+from beanprice import price as beanprice
 
 from beancount_utils.deduplicate import mark_duplicate_entries, extract_out_of_place
 
@@ -23,11 +24,12 @@ assets_remap = {
 class Importer(beangulp.Importer):
     """An importer for Kraken Ledger JSON Export."""
 
-    def __init__(self, base_account, base_currency='USD', pnl_account="Income:PnL", stake_account="Income:Staking"):
+    def __init__(self, base_account, base_currency='USD', pnl_account="Income:PnL", stake_account="Income:Staking", price_cache=None):
         self.base_account = base_account
         self.base_currency = base_currency
         self.pnl_account = pnl_account
         self.stake_account = stake_account
+        self.price_cache = price_cache
 
     def identify(self, filepath):
         if not filepath.lower().endswith(".json"):
@@ -44,6 +46,12 @@ class Importer(beangulp.Importer):
     def extract(self, filepath, existing):
         entries = []
 
+        # Initialize beanprice cache and map of commodity:sources
+        currencies = beanprice.find_currencies_declared(existing)
+        commodity_sources = { currency[0]:currency[2] for currency in currencies }
+        if self.price_cache:
+            beanprice.setup_cache(self.price_cache, False)
+
         with open(filepath) as f:
             data = json.load(f)
 
@@ -52,7 +60,7 @@ class Importer(beangulp.Importer):
                 meta = new_metadata(filepath, 0)
                 date = datetime.datetime.fromtimestamp(time)
                 if ledger_type == 'staking':
-                    entries.append(self._extract_staking(date.date(), meta, group))
+                    entries.append(self._extract_staking(date.date(), meta, group, commodity_sources))
                 else:
                     narration = extract_narration(group, self.base_currency)
                     postings = self._extract_postings(group)
@@ -64,17 +72,28 @@ class Importer(beangulp.Importer):
     def get_asset_account(self, asset):
         return self.base_account + ':' + asset
 
-    def _extract_staking(self, date, meta, group):
+    def _extract_staking(self, date, meta, group, commodity_sources):
         if len(group) != 1:
             raise ValueError("Staking group should contain exactly one entry.")
         ledger = group[0]
         narration = "Staked " + ledger['asset']
         account = self.get_asset_account(ledger['asset'])
         amount = Amount(Decimal(ledger['amount']), ledger['asset'])
-        pmeta = {'source': f"bean-price -e 'USD:coinbase/{ledger['asset'].lower()}-usd' -d {date} --no-cache"}
+
+        # Get cost, or set posting meta to highlight missing source
+        cost = None
+        pmeta = None
+        if ledger['asset'] in commodity_sources:
+            srcs = commodity_sources[ledger['asset']]
+            dated_price = beanprice.DatedPrice(self.base_currency, None, date, srcs)
+            price = beanprice.fetch_price(dated_price)
+            cost = CostSpec(price.amount.number, None, price.amount.currency, None, None, None)
+        else:
+            pmeta = {'notice': f"{ledger['asset']} not found in commodities"}
+
         postings = [
             Posting(self.stake_account, None, None, None, None, None),
-            Posting(account, amount, None, None, None, pmeta),
+            Posting(account, amount, cost, None, None, pmeta),
         ]
         return Transaction(meta, date, '*', None, narration, frozenset(), frozenset(), postings)
 
