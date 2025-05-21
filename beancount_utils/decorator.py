@@ -38,7 +38,7 @@ class Decorator:
     def decorate_transaction(self, transaction):
         for decoration in self.decorations:
             if decoration.match(transaction):
-                transaction = decoration.decorate(transaction)
+                return decoration.decorate(transaction)
         return transaction
 
 
