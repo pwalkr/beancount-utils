@@ -17,8 +17,6 @@ class Importer(importer.Importer):
         self.provider_leaf = provider_leaf
 
     def identify(self, filepath):
-        if not path.basename(filepath).startswith('MedicalClaimSummary'):
-            return False
         mimetype, encoding = mimetypes.guess_type(filepath)
         if mimetype != 'text/csv':
             return False
