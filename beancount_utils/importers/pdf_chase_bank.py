@@ -27,7 +27,10 @@ class Importer(beangulp.Importer):
         if mimetype != 'application/pdf':
             return False
 
-        text = pdf_to_text(filepath)
+        try:
+            text = pdf_to_text(filepath)
+        except Exception:
+            return False
         if text:
             return re.search(r'Account Number: ( \d{4}){3} ' + self.last4acct, text) is not None
 
