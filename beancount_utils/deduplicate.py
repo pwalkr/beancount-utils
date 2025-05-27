@@ -21,6 +21,8 @@ def extract_out_of_place(existing, entries, account, window=datetime.timedelta(d
 
 def yield_context(existing, entries, account):
     txns = list(data.filter_txns(entries))
+    if not txns:
+        return
     open_date = txns[0].date
     close_date = txns[-1].date
     for entry in data.filter_txns(existing):
