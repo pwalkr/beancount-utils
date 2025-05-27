@@ -1,5 +1,6 @@
 beancount
-git+https://github.com/beancount/beanprice.git
+beangulp
+beanprice
 ofxtools
 pypdf
 pytest
