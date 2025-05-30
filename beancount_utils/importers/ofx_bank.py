@@ -100,7 +100,7 @@ class Importer(beangulp.Importer):
         with open(filepath) as fd:
             soup = bs4.BeautifulSoup(fd, 'lxml')
         entries = extract(soup, filepath, self.acctid_regexp, self.importer_account,
-                       flags.FLAG_OKAY, self.balance_type)
+                       flags.FLAG_WARNING, self.balance_type)
         return entries
 
     def deduplicate(self, entries, existing):
