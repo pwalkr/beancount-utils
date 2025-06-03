@@ -33,18 +33,20 @@ class Decorator:
     def decorate(self, entries):
         for idx, entry in enumerate(entries):
             if isinstance(entry, Transaction) and not self.exclude(entry):
-                entries[idx] = self.decorate_transaction(entry)
+                decorated = self.decorate_transaction(entry)
+                if decorated is not None:
+                    entries[idx] = decorated
 
     def decorate_transaction(self, transaction):
         for decoration in self.decorations:
             if decoration.match(transaction):
                 return decoration.decorate(transaction)
-        return transaction
 
 
 class Decoration:
     def __init__(self, decoration):
-        # Required field for matching
+        if 're' not in decoration:
+            raise ValueError("Decoration config must include 're' Regex field for matching payees.")
         self.re = decoration['re']
         self.rec = re.compile(self.re, flags=re.IGNORECASE)
 
@@ -61,17 +63,19 @@ class Decoration:
         return self.rec.search(transaction.payee) is not None
 
     def decorate(self, transaction):
+        postings = list(transaction.postings)
         if self.target_account:
-            transaction.postings.append(
-                Posting(self.target_account, -transaction.postings[0].units, None, None, None, None)
-            )
+            postings.append(
+                Posting(self.target_account, None, None, None, None, None))
+        result = transaction
         if self.flag:
-            transaction = transaction._replace(flag=self.flag)
+            result = result._replace(flag=self.flag)
         if self.narration:
-            transaction = transaction._replace(narration=self.narration)
+            result = result._replace(narration=self.narration)
         if self.payee:
-            transaction = transaction._replace(payee=self.payee)
+            result = result._replace(payee=self.payee)
         if self.tags:
-            transaction = transaction._replace(tags=transaction.tags.union(self.tags))
-
-        return transaction
+            result = result._replace(tags=result.tags.union(self.tags))
+        if self.target_account:
+            result = result._replace(postings=postings)
+        return result
