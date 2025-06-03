@@ -1,6 +1,6 @@
 import re
 import datetime
-from datetime.datetime import strptime
+from datetime import datetime as dt
 from pypdf import PdfReader
 
 
@@ -39,8 +39,8 @@ def extract_info(text):
         return {
             account_number: info[0].strip(),
             amount_due: info[3].strip(),
-            draft_day: strptime(info[2].strip(), '%m/%d/%Y'),
-            due_date: strptime(info[1].strip(), '%m/%d/%Y'),
+            draft_day: dt.strptime(info[2].strip(), '%m/%d/%Y'),
+            due_date: dt.strptime(info[1].strip(), '%m/%d/%Y'),
         }
 
 
