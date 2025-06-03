@@ -4,3 +4,4 @@ beanprice
 ofxtools
 pypdf
 pytest
+pyyaml
