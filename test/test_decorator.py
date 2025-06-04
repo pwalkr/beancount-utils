@@ -128,13 +128,5 @@ class TestDecoratorFromYaml(unittest.TestCase):
         mock_load_yaml.assert_called_once_with(self.temp_files[0])
         mock_from_list.assert_called_once_with([self.decoration1])
 
-    @patch('beancount_utils.decorator.load_yaml')
-    @patch.object(Decorator, 'from_list')
-    def test_from_yaml_multiple_files(self, mock_from_list, mock_load_yaml):
-        mock_load_yaml.side_effect = [[self.decoration1], [self.decoration2]]
-        Decorator.from_yaml(*self.temp_files)
-        self.assertEqual(mock_load_yaml.call_count, 2)
-        mock_from_list.assert_called_once_with([self.decoration1, self.decoration2])
-
 if __name__ == '__main__':
     unittest.main()

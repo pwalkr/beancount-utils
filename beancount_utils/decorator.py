@@ -14,10 +14,8 @@ class Decorator:
         self.exclude = (lambda x: False) if exclude is None else exclude
 
     @classmethod
-    def from_yaml(cls, *args):
-        decorations = []
-        for filepath in args:
-            decorations += load_yaml(filepath)
+    def from_yaml(cls, filepath):
+        decorations = load_yaml(filepath)
         return cls.from_list(decorations)
 
     @classmethod
