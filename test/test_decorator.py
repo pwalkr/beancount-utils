@@ -61,6 +61,36 @@ class TestDecorator(unittest.TestCase):
         self.assertEqual(tx2.flag, '*')
         self.assertEqual(tx2.narration, 'First')
 
+class TestDecoratorFromDict(unittest.TestCase):
+    def setUp(self):
+        self.decoration1 = {'re': 'foo', 'flag': '*'}
+        self.decoration2 = {'re': 'bar', 'flag': '!'}
+        self.decoration3 = {'re': 'baz', 'flag': '#'}
+        self.config = {
+            'default': [self.decoration1],
+            'bank': [self.decoration2],
+            'card': [self.decoration3]
+        }
+
+    def test_from_dict_with_scope(self):
+        decorator = Decorator.from_dict(self.config, scope='bank')
+        self.assertEqual(len(decorator.decorations), 2)
+        self.assertTrue(any(d.flag == '*' for d in decorator.decorations))  # from default
+        self.assertTrue(any(d.flag == '!' for d in decorator.decorations))  # from bank
+
+    def test_from_dict_with_default_scope(self):
+        decorator = Decorator.from_dict(self.config)
+        self.assertEqual(len(decorator.decorations), 1)
+        self.assertEqual(decorator.decorations[0].flag, '*')
+
+    def test_from_dict_with_missing_scope(self):
+        with self.assertRaises(ValueError):
+            Decorator.from_dict(self.config, scope='nonexistent')
+
+    def test_from_dict_invalid_type(self):
+        with self.assertRaises(ValueError):
+            Decorator.from_dict(['not', 'a', 'dict'])
+
 
 class TestDecoration(unittest.TestCase):
     def setUp(self):

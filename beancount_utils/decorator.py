@@ -8,19 +8,39 @@ def load_yaml(filepath):
         return yaml.safe_load(file)
 
 
+default_scope = 'default'
+
+
 class Decorator:
     def __init__(self, decorations, exclude=None):
         self.decorations = decorations
         self.exclude = (lambda x: False) if exclude is None else exclude
 
     @classmethod
-    def from_yaml(cls, filepath):
+    def from_yaml(cls, filepath, scope=None):
         decorations = load_yaml(filepath)
-        return cls.from_list(decorations)
+        if isinstance(decorations, dict):
+            return cls.from_dict(decorations, scope)
+        elif isinstance(decorations, list):
+            if scope is not None:
+                raise ValueError("Scope is not applicable for list of decorations.")
+            return cls.from_list(decorations)
 
     @classmethod
     def from_list(cls, decorations):
+        if not isinstance(decorations, list):
+            raise ValueError("Decorations must be a list.")
         return cls([Decoration(decoration) for decoration in decorations])
+
+    @classmethod
+    def from_dict(cls, decorations, scope=None):
+        if not isinstance(decorations, dict):
+            raise ValueError("Decorations must be a dictionary.")
+        if scope and scope not in decorations:
+            raise ValueError(f"Scope '{scope}' not found in decorations.")
+        scoped = decorations.get(scope, [])
+        default = decorations.get(default_scope, [])
+        return cls([Decoration(decoration) for decoration in (scoped + default)])
 
     def append_yaml(self, filepath):
         self.append_list(load_yaml(filepath))
