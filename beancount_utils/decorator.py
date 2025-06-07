@@ -73,6 +73,7 @@ class Decoration:
         self.narration = decoration.get('narration')
         self.payee = decoration.get('payee')
         self.tags = decoration.get('tags')
+        self.source_account = decoration.get('source_account')
         self.target_account = decoration.get('target_account')
 
     def match(self, transaction):
@@ -82,6 +83,9 @@ class Decoration:
 
     def decorate(self, transaction):
         postings = list(transaction.postings)
+        if self.source_account:
+            postings.append(
+                Posting(self.source_account, None, None, None, None, None))
         if self.target_account:
             postings.append(
                 Posting(self.target_account, None, None, None, None, None))
