@@ -1,3 +1,4 @@
+from collections import namedtuple
 from datetime import datetime
 from decimal import Decimal
 from os import path
@@ -8,13 +9,15 @@ import csv
 import re
 
 
+ClaimInfo = namedtuple('ClaimInfo', ['provider', 'patient'])
+
+
 class Importer(importer.Importer):
-    def __init__(self, base_account, currency, insurance_account=None, decorate=None, provider_leaf=None):
-        self.base_account = base_account
+    def __init__(self, claim_acount, currency, insurance_account=None, decorate=None):
+        self.claim_acount = claim_acount
         self.currency = currency
         self.insurance_account = insurance_account
         self.decorate = decorate
-        self.provider_leaf = provider_leaf
 
     def identify(self, filepath):
         mimetype, encoding = mimetypes.guess_type(filepath)
@@ -25,7 +28,7 @@ class Importer(importer.Importer):
         return head.startswith('Claim Number,Patient Name,Date Visited')
 
     def account(self, filepath):
-        return self.base_account
+        return None
 
     def extract(self, filepath, existing):
         entries = []
@@ -35,10 +38,10 @@ class Importer(importer.Importer):
                 flag = '*'
                 date = datetime.strptime(entry['Date Visited'], '%Y-%m-%d')
                 year = date.strftime('%Y')
-                account = self.full_account({
-                    "provider": entry['Visited Provider'],
-                    "patient": entry['Patient Name'],
-                })
+                account = self.claim_acount(ClaimInfo(
+                    provider=entry['Visited Provider'],
+                    patient=entry['Patient Name'],
+                ))
                 payee = entry['Visited Provider']
                 narration = entry['Patient Name']
                 amount = rc.sub('', entry['Your Responsibility'])
@@ -70,13 +73,6 @@ class Importer(importer.Importer):
                                    payee, narration, frozenset(), frozenset(), inspost))
 
         return entries
-
-    def full_account(self, entry):
-        if self.provider_leaf:
-            leaf = self.provider_leaf(entry)
-            return self.base_account + ':' + leaf
-        else:
-            return self.base_account
 
     def deduplicate(self, entries, existing):
         super().deduplicate(entries, existing)
