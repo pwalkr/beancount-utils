@@ -54,7 +54,7 @@ class Importer(beangulp.Importer):
 
     def __init__(self, acctid_regexp, account, basename=None,
                  balance_type=BalanceType.DECLARED,
-                 decorate=None):
+                 decorator=None):
         """Create a new importer posting to the given account.
 
         Args:
@@ -68,7 +68,7 @@ class Importer(beangulp.Importer):
         self.importer_account = account
         self.basename = basename
         self.balance_type = balance_type
-        self.decorate = decorate
+        self.decorator = decorator
 
     def identify(self, filepath):
         if not filepath.lower().endswith(".ofx"):
@@ -106,8 +106,8 @@ class Importer(beangulp.Importer):
     def deduplicate(self, entries, existing):
         mark_duplicate_entries(entries, existing, self.importer_account)
         # Decorate after marking dupes but before adding out-of-place transactions
-        if self.decorate:
-            self.decorate(entries)
+        if self.decorator:
+            self.decorator.decorate(entries)
         entries.extend(extract_out_of_place(existing, entries, self.importer_account))
 
 
