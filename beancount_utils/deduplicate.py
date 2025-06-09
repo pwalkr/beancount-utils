@@ -77,11 +77,14 @@ class PostingWrapper():
         self.entry = entry
         self.date = entry.date
         self.account = posting.account
-        self.amount = posting.units.number
-        self.currency = posting.units.currency
+        self.amount = posting.units.number if posting.units is not None else None
+        self.currency = posting.units.currency if posting.units is not None else None
         self._match = None
 
     def match(self, ip, window):
+        if self.amount is None or self.currency is None:
+            return False
+
         if self._match is not None or ip._match is not None:
             return False
 
