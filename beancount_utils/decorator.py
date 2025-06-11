@@ -91,7 +91,7 @@ class Decoration:
             transaction = transaction._replace(flag=self.flag)
         if self.narration:
             transaction = transaction._replace(narration=self.narration)
-        if self.payee:
+        if self.payee is not None:
             transaction = transaction._replace(payee=self.payee)
         if self.tags:
             transaction = transaction._replace(tags=transaction.tags.union(self.tags))
