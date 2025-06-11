@@ -3,20 +3,20 @@ from decimal import Decimal
 from os import path
 from beancount.core.data import Amount, Posting, Transaction, new_metadata
 from beangulp import importer, mimetypes
-from beangulp.importers import csvbase
 import json
 import re
-import sys
 
 from beancount_utils.deduplicate import mark_duplicate_entries, extract_out_of_place
+from beancount_utils.decorator import Decorator
 
 
 class Importer(importer.Importer):
-    def __init__(self, account, acctid, currency='USD', decorate=None):
+    def __init__(self, account, acctid, currency='USD', decorate=None, decorator: Decorator = None):
         self._account = account
         self.acctid = acctid
         self.currency = currency
         self.decorate = decorate
+        self.decorator = decorator
 
     def identify(self, filepath):
         mimetype, encoding = mimetypes.guess_type(filepath)
@@ -64,3 +64,5 @@ class Importer(importer.Importer):
         # Decorate after marking duplicates so extra target postings don't interfere
         if self.decorate:
             self.decorate(entries)
+        if self.decorator:
+            self.decorator.decorate(entries)
