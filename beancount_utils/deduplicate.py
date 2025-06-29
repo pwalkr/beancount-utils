@@ -7,11 +7,18 @@ def extract_out_of_place(existing, entries, account, window=datetime.timedelta(d
     incoming_postings = wrap_postings(entries, account)
     context = list(yield_context(existing, entries, account))
     for posting in wrap_postings(context, account):
+        found = False
         for candidate in incoming_postings:
             if posting.match(candidate, window):
                 # Mark similar to beangulp.extract.mark_duplicate_entries
                 posting.entry.meta[DUPLICATE] = candidate.entry
+                found = True
                 break
+        if not found:
+            # Update flag. Can't update tuple so replace based on index
+            for x, p in enumerate(posting.entry.postings):
+                if p is posting.posting:
+                    posting.entry.postings[x] = posting.posting._replace(flag='!')
     return [
         entry._replace(tags=entry.tags.union({'OUT_OF_PLACE'}))
         for entry in context
