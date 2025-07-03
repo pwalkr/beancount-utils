@@ -41,6 +41,22 @@ def yield_context(existing, entries, account):
 
 
 def mark_duplicate_entries(entries, context, account, window=datetime.timedelta(days=2)):
+    mark_duplicate_open_close(entries, context)
+    mark_duplicate_postings(entries, context, account, window)
+    mark_duplicate_prices(entries, context)
+
+
+def mark_duplicate_open_close(entries, context):
+    for entry in entries:
+        if isinstance(entry, data.Open) or isinstance(entry, data.Close):
+            for candidate in context:
+                if type(entry) == type(candidate) and entry.date == candidate.date:
+                    # Mark similar to beangulp.extract.mark_duplicate_entries
+                    entry.meta[DUPLICATE] = candidate
+                    break
+
+
+def mark_duplicate_postings(entries, context, account, window=datetime.timedelta(days=2)):
     context_postings = wrap_postings(context, account)
     for posting in wrap_postings(entries, account):
         for candidate in context_postings:
@@ -52,6 +68,19 @@ def mark_duplicate_entries(entries, context, account, window=datetime.timedelta(
                     if p is posting.posting:
                         posting.entry.postings[x] = posting.posting._replace(flag='!')
                 break
+
+
+def mark_duplicate_prices(entries, context):
+    for entry in entries:
+        if isinstance(entry, data.Price):
+            for candidate in context:
+                if isinstance(candidate, data.Price) and entry.date == candidate.date and entry.currency == candidate.currency:
+                    if entry.amount == candidate.amount:
+                        # Mark similar to beangulp.extract.mark_duplicate_entries
+                        entry.meta[DUPLICATE] = candidate
+                    else:
+                        entry.meta['duplicate-price-error'] = f"Different amount than {candidate}"
+                    break
 
 
 def clone_transaction(entry):
