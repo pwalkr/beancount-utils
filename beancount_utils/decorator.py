@@ -82,7 +82,7 @@ class Decoration:
 
     def decorate(self, transaction):
         if self.source_account:
-            transaction.postings.append(
+            transaction.postings.insert(0,
                 Posting(self.source_account, None, None, None, None, None))
         if self.target_account:
             transaction.postings.append(
