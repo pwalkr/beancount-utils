@@ -64,9 +64,9 @@ class Importer(beangulp.Importer):
             entries.append(self.extract_security_price(security))
 
         for stmt in ofx.statements:
-            print("\n\n{}\n\n".format(stmt.__repr__()))
-            asofdate = stmt.dtasof.date()
+            # print("\n\n{}\n\n".format(stmt.__repr__()))
             if 'invposlist' in stmt:
+                continue
                 for invpos in stmt.invposlist:
                     self.extract_position_balance(invpos, entries)
 
