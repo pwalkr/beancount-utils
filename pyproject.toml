@@ -17,3 +17,6 @@ dependencies = [
 
 [project.scripts]
 digest = "beancount_utils.digest:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["beancount_utils"]
