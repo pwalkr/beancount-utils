@@ -123,6 +123,8 @@ class Importer(beangulp.Importer):
                     pamt = Amount(Decimal(txn.units), ticker)
                     pact = self.full_account(self.get_ticker(txn))
                     postings.append(Posting(pact, pamt, None, None, None, self.generic_meta()))
+                else:
+                    raise Exception("Unknown transaction {}".format(txn))
 
                 entries.append(Transaction(tmeta, tdate, '*', None, narr, frozenset(), frozenset(), postings))
                 if type(txn) is model.SELLDEBT and "Redemption" in txn.memo:
