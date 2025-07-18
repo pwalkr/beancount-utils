@@ -13,11 +13,12 @@ ClaimInfo = namedtuple('ClaimInfo', ['provider', 'patient'])
 
 
 class Importer(importer.Importer):
-    def __init__(self, claim_acount, currency, insurance_account=None, decorate=None):
+    def __init__(self, claim_acount, currency, insurance_account=None, decorate=None, import_zero=False):
         self.claim_acount = claim_acount
         self.currency = currency
         self.insurance_account = insurance_account
         self.decorate = decorate
+        self.import_zero = import_zero
 
     def identify(self, filepath):
         mimetype, encoding = mimetypes.guess_type(filepath)
@@ -57,10 +58,11 @@ class Importer(importer.Importer):
                     'provider': payee
                 })
 
-                postings = [data.Posting(account, units, None, None, None, None)]
+                if amount.__abs__() >= 0.01 or self.import_zero:
+                    postings = [data.Posting(account, units, None, None, None, None)]
 
-                entries.append(data.Transaction(meta, date.date(), flag,
-                               payee, narration, frozenset(), frozenset(), postings))
+                    entries.append(data.Transaction(meta, date.date(), flag,
+                                   payee, narration, frozenset(), frozenset(), postings))
 
                 if self.insurance_account:
                     insamt = rc.sub('', entry["Amount Billed"])
