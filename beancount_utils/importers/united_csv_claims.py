@@ -8,6 +8,8 @@ from beangulp.importers import csvbase
 import csv
 import re
 
+from beancount_utils.deduplicate import mark_duplicate_entries
+
 
 ClaimInfo = namedtuple('ClaimInfo', ['provider', 'patient'])
 
@@ -19,6 +21,8 @@ class Importer(importer.Importer):
         self.insurance_account = insurance_account
         self.decorate = decorate
         self.import_zero = import_zero
+        # Keep track for deduplication
+        self.found_accounts = set()
 
     def identify(self, filepath):
         mimetype, encoding = mimetypes.guess_type(filepath)
@@ -43,6 +47,7 @@ class Importer(importer.Importer):
                     provider=entry['Visited Provider'],
                     patient=entry['Patient Name'],
                 ))
+                self.found_accounts.add(account)
                 payee = entry['Visited Provider']
                 narration = entry['Patient Name']
                 amount = rc.sub('', entry['Your Responsibility'])
@@ -77,7 +82,8 @@ class Importer(importer.Importer):
         return entries
 
     def deduplicate(self, entries, existing):
-        super().deduplicate(entries, existing)
+        for account in self.found_accounts:
+            mark_duplicate_entries(entries, existing, account)
         # Decorate after marking duplicates so extra target postings don't interfere
         if self.decorate:
             self.decorate(entries)
