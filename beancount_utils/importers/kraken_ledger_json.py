@@ -17,6 +17,8 @@ assets_remap = {
     "XLTC": "LTC",
     "XXBT": "BTC",
     "XXDG": "DOGE",
+    "XXLM": "XLM",
+    "XXRP": "XRP",
     "ZUSD": "USD",
 }
 
