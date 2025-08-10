@@ -11,12 +11,14 @@ import re
 from beancount_utils.deduplicate import mark_duplicate_entries
 
 
-ClaimInfo = namedtuple('ClaimInfo', ['provider', 'patient'])
+# Used by leaf_account function to create a unique account name
+ClaimInfo = namedtuple('ClaimInfo', ['provider', 'patient', 'year'])
 
 
 class Importer(importer.Importer):
-    def __init__(self, claim_acount, currency, insurance_account=None, decorate=None, import_zero=False):
-        self.claim_acount = claim_acount
+    def __init__(self, currency, base_account=None, leaf_account=None, insurance_account=None, decorate=None, import_zero=False):
+        self.base_account = base_account
+        self.leaf_account = leaf_account
         self.currency = currency
         self.insurance_account = insurance_account
         self.decorate = decorate
@@ -43,11 +45,7 @@ class Importer(importer.Importer):
             for entry in csv.DictReader(csvfile):
                 flag = '*'
                 date = datetime.strptime(entry['Date Visited'], '%Y-%m-%d')
-                year = date.strftime('%Y')
-                account = self.claim_acount(ClaimInfo(
-                    provider=entry['Visited Provider'],
-                    patient=entry['Patient Name'],
-                ))
+                account = self.full_account(date, entry)
                 self.found_accounts.add(account)
                 payee = entry['Visited Provider']
                 narration = entry['Patient Name']
@@ -84,6 +82,21 @@ class Importer(importer.Importer):
 
     def fix_amount(self, amount):
         return self.fixrc.sub('', amount)
+
+    def full_account(self, date, entry):
+        parts = []
+
+        if self.base_account:
+            parts.append(self.base_account)
+
+        if self.leaf_account:
+            parts.append(self.leaf_account(ClaimInfo(
+                patient=entry['Patient Name'],
+                provider=entry['Visited Provider'],
+                year=date.strftime('%Y'),
+            )))
+
+        return ':'.join(parts)
 
     def deduplicate(self, entries, existing):
         for account in self.found_accounts:
