@@ -70,7 +70,8 @@ class Importer(beangulp.Importer):
                     entries.append(Transaction(meta, date.date(), '*', None, narration, frozenset(), frozenset(), postings))
                 else:
                     print(f"Unknown ledger type: {ledger_type}\n{group}")
-                entries.extend(extract_balances(group, filepath, date, self.base_account))
+                if False:
+                    entries.extend(extract_balances(group, filepath, date, self.base_account))
 
         return entries
 
