@@ -64,10 +64,12 @@ class Importer(beangulp.Importer):
                 date = datetime.datetime.fromtimestamp(time)
                 if ledger_type == 'staking':
                     entries.append(self._extract_staking(date.date(), meta, group, commodity_sources))
-                else:
+                elif ledger_type == 'trade':
                     narration = extract_narration(group, self.base_currency)
                     postings = self._extract_postings(group)
                     entries.append(Transaction(meta, date.date(), '*', None, narration, frozenset(), frozenset(), postings))
+                else:
+                    print(f"Unknown ledger type: {ledger_type}\n{group}")
                 entries.extend(extract_balances(group, filepath, date, self.base_account))
 
         return entries
