@@ -21,6 +21,8 @@ class Importer(importer.Importer):
         self.insurance_account = insurance_account
         self.decorate = decorate
         self.import_zero = import_zero
+        # For fixing amounts
+        self.fixrc = re.compile('[$,)]')
         # Keep track for deduplication
         self.found_accounts = set()
 
@@ -37,7 +39,6 @@ class Importer(importer.Importer):
 
     def extract(self, filepath, existing):
         entries = []
-        rc = re.compile('[$,)]')
         with open(filepath) as csvfile:
             for entry in csv.DictReader(csvfile):
                 flag = '*'
@@ -50,7 +51,7 @@ class Importer(importer.Importer):
                 self.found_accounts.add(account)
                 payee = entry['Visited Provider']
                 narration = entry['Patient Name']
-                amount = rc.sub('', entry['Your Responsibility'])
+                amount = self.fix_amount(entry['Your Responsibility'])
                 amount = amount.replace('(', '-')
                 if amount:
                     amount = round(-Decimal(amount), 2)
@@ -80,6 +81,9 @@ class Importer(importer.Importer):
                                    payee, narration, frozenset(), frozenset(), inspost))
 
         return entries
+
+    def fix_amount(self, amount):
+        return self.fixrc.sub('', amount)
 
     def deduplicate(self, entries, existing):
         for account in self.found_accounts:
