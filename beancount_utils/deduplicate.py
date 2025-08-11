@@ -125,9 +125,11 @@ class PostingWrapper():
             return False
 
         if abs(self.date - ip.date) <= window:
-            if self.account == ip.account and self.amount == ip.amount and self.currency == ip.currency:
-                self._match = ip
-                ip._match = self
-                return True
+            if self.amount == ip.amount and self.currency == ip.currency:
+                # Match leaf accounts
+                if self.account.startswith(ip.account) or ip.account.startswith(self.account):
+                    self._match = ip
+                    ip._match = self
+                    return True
 
         return False
