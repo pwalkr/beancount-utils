@@ -95,8 +95,9 @@ class Importer(beangulp.Importer):
         if ledger['asset'] in commodity_sources:
             srcs = commodity_sources[ledger['asset']]
             dated_price = beanprice.DatedPrice(self.base_currency, None, date, srcs)
-            price = beanprice.fetch_price(dated_price).amount
-            cost = CostSpec(price.number, None, price.currency, None, None, None)
+            price = beanprice.fetch_price(dated_price)
+            if price:
+                cost = CostSpec(price.amount.number, None, price.amount.currency, None, None, None)
         else:
             pmeta = {'notice': f"{ledger['asset']} not found in commodities"}
 
