@@ -11,6 +11,7 @@ from beancount.core.data import Amount, Balance, new_metadata
 
 
 default_assets_map = {
+    "XBT": "BTC",
     "XETH": "ETH",
     "XLTC": "LTC",
     "XXBT": "BTC",
