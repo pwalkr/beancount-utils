@@ -35,10 +35,9 @@ class Importer(beangulp.Importer):
         mimetype, encoding = mimetypes.guess_type(filepath)
         if mimetype != 'application/vnd.intu.qfx' and not filepath.lower().endswith('.ofx'):
             return False
-        parser = OFXTree()
-        parser.parse(filepath)
-        ofx = parser.convert()
-        return ofx.signon.fi.fid == self.fid
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            head = f.read(1000)
+        return f"<FID>{self.fid}</FID>" in head and f"<ACCTID>{self.acctid}</ACCTID>" in head
 
     def account(self, filepath):
         return self.base_account
