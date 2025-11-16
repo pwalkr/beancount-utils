@@ -189,9 +189,15 @@ class Importer(beangulp.Importer):
         ]
 
     def _handle_transfer(self, txn):
-        print(f"Handling transfer: {txn.__repr__()}")
         meta = self._get_generic_meta({"memo": txn.memo})
         # meta = self._get_generic_meta({"raw": txn.__repr__()})  # DEBUG
+        postings = [
+            Posting(
+                account=self._get_full_account(self.currency),
+                units=Amount(txn.trnamt.normalize(), self.currency),
+                meta=None, cost=None, price=None, flag=None
+            ),
+        ]
         return [
             Transaction(
                 meta=meta,
@@ -201,18 +207,7 @@ class Importer(beangulp.Importer):
                 narration=txn.name,
                 tags=frozenset(),
                 links=frozenset(),
-                postings=[
-                    Posting(
-                        account=self._get_full_account(self.currency),
-                        units=Amount(txn.trnamt.normalize(), self.currency),
-                        meta=None, cost=None, price=None, flag=None
-                    ),
-                    Posting(
-                        account=self.foreign_tax,
-                        units=-Amount(txn.trnamt.normalize(), self.currency),
-                        meta=None, cost=None, price=None, flag=None
-                    ),
-                ]
+                postings=postings,
             )
         ]
 
