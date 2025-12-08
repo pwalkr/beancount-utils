@@ -16,17 +16,17 @@ ClaimInfo = namedtuple('ClaimInfo', ['provider', 'patient', 'year'])
 
 
 class Importer(importer.Importer):
-    def __init__(self, currency, base_account=None, leaf_account=None, insurance_account=None, decorate=None, import_zero=False):
+    def __init__(self, currency, base_account=None, leaf_account=None, decorate=None, import_zero=False, tag_oop='Insurance-OOP'):
         self.base_account = base_account
         self.leaf_account = leaf_account
         self.currency = currency
-        self.insurance_account = insurance_account
         self.decorate = decorate
         self.import_zero = import_zero
         # For fixing amounts
-        self.fixrc = re.compile('[$,)]')
+        self.fixrc = re.compile('[$,]')
         # Keep track for deduplication
         self.found_accounts = set()
+        self.tag_oop = tag_oop
 
     def identify(self, filepath):
         mimetype, encoding = mimetypes.guess_type(filepath)
@@ -44,13 +44,12 @@ class Importer(importer.Importer):
         with open(filepath) as csvfile:
             for entry in csv.DictReader(csvfile):
                 flag = '*'
-                date = datetime.strptime(entry['Date Visited'], '%Y-%m-%d')
+                date = datetime.strptime(entry['Service Date'], '%m/%d/%Y')
                 account = self.full_account(date, entry)
                 self.found_accounts.add(account)
-                payee = entry['Visited Provider']
-                narration = entry['Patient Name']
-                amount = self.fix_amount(entry['Your Responsibility'])
-                amount = amount.replace('(', '-')
+                payee = entry['Provider']
+                narration = entry['Patient']
+                amount = self.fix_amount(entry['Patient Responsibility'])
                 if amount:
                     amount = round(-Decimal(amount), 2)
                 else:
@@ -58,25 +57,16 @@ class Importer(importer.Importer):
                 units = data.Amount(amount, self.currency)
 
                 meta = data.new_metadata(filepath, 0, {
-                    'claim': entry['Claim Number'].strip(),
                     'provider': payee
                 })
 
                 if amount.__abs__() >= 0.01 or self.import_zero:
                     postings = [data.Posting(account, units, None, None, None, None)]
-
+                    tags = []
+                    if self.tag_oop:
+                        tags.append(self.tag_oop)
                     entries.append(data.Transaction(meta, date.date(), flag,
-                                   payee, narration, frozenset(), frozenset(), postings))
-
-                if self.insurance_account:
-                    insamt = rc.sub('', entry["Amount Billed"])
-                    insamt = insamt.replace('(', '-')
-                    insamt = round(-Decimal(insamt), 2)
-                    insamt = insamt - amount
-                    insamt = data.Amount(insamt, self.currency)
-                    inspost = [data.Posting(self.insurance_account, insamt, None, None, None, None)]
-                    entries.append(data.Transaction(dict(meta), date.date(), flag,
-                                   payee, narration, frozenset(), frozenset(), inspost))
+                                   payee, narration, frozenset(tags), frozenset(), postings))
 
         return entries
 
@@ -91,8 +81,8 @@ class Importer(importer.Importer):
 
         if self.leaf_account:
             parts.append(self.leaf_account(ClaimInfo(
-                patient=entry['Patient Name'],
-                provider=entry['Visited Provider'],
+                patient=entry['Patient'],
+                provider=entry['Provider'],
                 year=date.strftime('%Y'),
             )))
 
