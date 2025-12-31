@@ -13,12 +13,14 @@ from beancount_utils.deduplicate import mark_duplicate_entries, extract_out_of_p
 
 
 assets_remap = {
-    "XETH": "ETH",
-    "XLTC": "LTC",
-    "XXBT": "BTC",
+    "SOL03": "SOL", # Solana
+    "XETH": "ETH",  # Ethereum
+    "XLTC": "LTC",  # Litecoin
+    "XXBT": "BTC",  # Bitcoin
     "XXDG": "DOGE",
-    "XXLM": "XLM",
-    "XXRP": "XRP",
+    "XXLM": "XLM",  # Stellar
+    "XXMR": "XMR",  # Monero
+    "XXRP": "XRP",  # Ripple
     "ZUSD": "USD",
 }
 
