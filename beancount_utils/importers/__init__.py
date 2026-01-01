@@ -3,6 +3,7 @@ import beancount_utils.importers.cigna_csv_claims
 import beancount_utils.importers.fidelity_ofx
 import beancount_utils.importers.kraken_balance_json
 import beancount_utils.importers.kraken_ledger_json
+import beancount_utils.importers.merrill_csv
 import beancount_utils.importers.merrill_ofx
 import beancount_utils.importers.simplefin
 import beancount_utils.importers.singlefin
