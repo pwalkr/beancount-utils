@@ -13,13 +13,13 @@ from beancount_utils.deduplicate import mark_duplicate_entries
 
 
 class Importer(importer.Importer):
-    def __init__(self, asset_account='Assets:Merrill', currency='USD', income_account=None, div_account=None, div_narration='Dividend {commodity}', buy_narration='Buy {commodity}'):
+    def __init__(self, asset_account='Assets:Merrill', currency='USD', income_account=None, div_account=None, decorator=None):
         self.asset_account = asset_account
         self.currency = currency
         self.income_account = income_account if income_account else asset_account.replace('Assets', 'Income')
         self.div_account = div_account if div_account else self.income_account
-        self.div_narration = div_narration
-        self.buy_narration = buy_narration
+        self.decorator = decorator
+
     def identify(self, filepath):
         mimetype, encoding = mimetypes.guess_type(filepath)
         if mimetype != 'text/csv':
@@ -39,12 +39,13 @@ class Importer(importer.Importer):
                 try:
                     date = datetime.strptime(entry['Trade Date'], '%m/%d/%Y').date()
                     tx_type = entry['Description 1 ']
+                    merrill_type = entry['Type']
                     if tx_type == 'Purchase ':
-                        self.extract_purchase(date, entry, entries)
+                        self.extract_purchase(date, merrill_type, entry, entries)
                     elif tx_type == 'Dividend':
-                        self.extract_dividend(date, entry, entries)
+                        self.extract_dividend(date, merrill_type, entry, entries)
                     elif tx_type == 'Funds Received':
-                        self.extract_received(date, entry, entries)
+                        self.extract_received(date, merrill_type, entry, entries)
                     else:
                         raise ValueError(f"Unknown transaction type: {tx_type}")
                 except Exception as e:
@@ -52,10 +53,13 @@ class Importer(importer.Importer):
                     raise e
         return entries
 
-    def extract_dividend(self, date, entry, entries):
-        narration = self.div_narration.format(commodity=entry['Symbol/CUSIP #'])
+    def extract_dividend(self, date, merrill_type, entry, entries):
+        narration = entry['Description 2']
         entries.append(Importer.Transaction(date, narration,
-            meta={'description': entry['Description 2']},
+            meta={
+                'description': entry['Description 2'],
+                'merrill_type': merrill_type,
+            },
             postings=[
                 Importer.Posting(
                     self.render_account(self.div_account, entry['Symbol/CUSIP #']),
@@ -68,11 +72,14 @@ class Importer(importer.Importer):
             ]
         ))
 
-    def extract_purchase(self, date, entry, entries):
+    def extract_purchase(self, date, merrill_type, entry, entries):
         total_cost = Decimal(re.sub(r"\(([\d.,]+)\)", r"-\1", entry['Amount ($)']))
-        narration = self.buy_narration.format(commodity=entry['Symbol/CUSIP #'])
+        narration = entry['Description 2']
         entries.append(Importer.Transaction(date, narration,
-            meta={'description': entry['Description 2']},
+            meta={
+                'description': entry['Description 2'],
+                'merrill_type': merrill_type,
+            },
             postings=[
                 Importer.Posting(
                     self.render_account(self.asset_account, self.currency),
@@ -86,12 +93,15 @@ class Importer(importer.Importer):
             ]
         ))
 
-    def extract_received(self, date, entry, entries):
+    def extract_received(self, date, merrill_type, entry, entries):
         entries.append(Importer.Transaction(date, 'Transfer', [
             Importer.Posting(
                 self.render_account(self.asset_account, self.currency),
                 Amount(Decimal(entry['Amount ($)']), self.currency),
-                meta={'description': entry['Description 2']},
+                meta={
+                    'description': entry['Description 2'],
+                    'merrill_type': merrill_type,
+                },
             ),
         ]))
 
@@ -122,5 +132,7 @@ class Importer(importer.Importer):
             postings=postings,
         )
 
-    # def deduplicate(self, entries, existing):
-    #     mark_duplicate_entries(entries, existing, self.base_account)
+    def deduplicate(self, entries, existing):
+        super().deduplicate(entries, existing)
+        if self.decorator:
+            self.decorator.decorate(entries)
