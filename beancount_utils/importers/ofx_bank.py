@@ -38,7 +38,7 @@ from beancount.core import flags
 import beangulp
 from beangulp import mimetypes
 
-from beancount_utils.deduplicate import mark_duplicate_entries, extract_out_of_place
+from beancount_utils.deduplicate import mark_duplicate_entries
 
 
 class BalanceType(enum.Enum):
@@ -108,7 +108,6 @@ class Importer(beangulp.Importer):
         # Decorate after marking dupes but before adding out-of-place transactions
         if self.decorator:
             self.decorator.decorate(entries)
-        entries.extend(extract_out_of_place(existing, entries, self.importer_account))
 
 
 def extract(soup, filename, acctid_regexp, account, flag, balance_type):
