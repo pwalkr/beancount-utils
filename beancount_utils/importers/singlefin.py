@@ -6,7 +6,7 @@ from beangulp import importer, mimetypes
 import json
 import re
 
-from beancount_utils.deduplicate import mark_duplicate_entries, extract_out_of_place
+from beancount_utils.deduplicate import mark_duplicate_entries
 from beancount_utils.decorator import Decorator
 
 
@@ -60,7 +60,6 @@ class Importer(importer.Importer):
 
     def deduplicate(self, entries, existing):
         mark_duplicate_entries(entries, existing, self._account)
-        entries.extend(extract_out_of_place(existing, entries, self._account))
         # Decorate after marking duplicates so extra target postings don't interfere
         if self.decorate:
             self.decorate(entries)
