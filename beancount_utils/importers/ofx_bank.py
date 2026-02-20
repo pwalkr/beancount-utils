@@ -41,6 +41,8 @@ import beangulp
 from beangulp import mimetypes
 from beangulp.extract import mark_duplicate_entries
 
+from beancount_utils.deduplicate import comparator, warn_duplicate_import_id
+
 
 logger = logging.getLogger(__name__)
 
@@ -107,45 +109,15 @@ class Importer(beangulp.Importer):
                        flags.FLAG_WARNING, self.balance_type)
         return entries
 
-    def cmp(self, entry1, entry2):
-        """Compare two entries for deduplication purposes."""
-        if hasattr(entry1, 'postings') and hasattr(entry2, 'postings'):
-            for p1 in entry1.postings:
-                if p1.account == self.importer_account and 'import_id' in p1.meta:
-                    for p2 in entry2.postings:
-                        if p2.account == self.importer_account:
-                            if 'import_id' in p2.meta:
-                                if p1.meta['import_id'] == p2.meta['import_id']:
-                                    if p1.units.currency == p2.units.currency and abs(p1.units.number - p2.units.number) < 0.00001:
-                                        return True
-                                    else:
-                                        logger.warning(f"Sanity check failed: amounts differ for import_id {p1.meta['import_id']} ({p1.units.number} vs {p2.units.number})")
-                                elif p2.meta['import_id'] not in self.imported_ids:
-                                    logger.warning(f"Existing entry import_id not in imported ids: {entry2.date} {entry2.flag} {entry2.payee} {entry2.narration} ({p2.meta['import_id']})")
-                            else:
-                                logger.warning(f"Existing entry missing import_id: {entry2.date} {entry2.flag} {entry2.payee} {entry2.narration}")
-        return False
-
     def deduplicate(self, entries, existing):
-        warn_duplicate_import_id(self.importer_account, existing)
+        warn_duplicate_import_id(self.importer_account, existing, logger)
         window = datetime.timedelta(days=2)
-        mark_duplicate_entries(entries, existing, window, self.cmp)
+        cmp = comparator(self.importer_account, logger, self.imported_ids)
+        mark_duplicate_entries(entries, existing, window, cmp)
 
         # Decorate after marking dupes to avoid interfering with the duplicate detection.
         if self.decorator:
             self.decorator.decorate(entries)
-
-
-def warn_duplicate_import_id(account, existing):
-    """Log a warning if any import_id is encountered more than once in the existing entries."""
-    found_import_ids = {}
-    for entry in existing:
-        if hasattr(entry, 'postings'):
-            for posting in entry.postings:
-                if posting.account == account and 'import_id' in posting.meta:
-                    if posting.meta['import_id'] in found_import_ids:
-                        logger.warning(f"Duplicate import_id encountered: {posting.meta['import_id']}")
-                    found_import_ids[posting.meta['import_id']] = True
 
 
 def extract(soup, filename, acctid_regexp, account, flag, balance_type):
