@@ -12,18 +12,20 @@ from beancount.core.data import Amount, Balance, new_metadata
 
 default_assets_map = {
     "XBT": "BTC",
-    "XETH": "ETH",
-    "XLTC": "LTC",
-    "XXBT": "BTC",
+    "SOL03": "SOL", # Solana
+    "XETH": "ETH",  # Ethereum
+    "XLTC": "LTC",  # Litecoin
+    "XXBT": "BTC",  # Bitcoin
     "XXDG": "DOGE",
-    "XXLM": "XLM",
-    "XXRP": "XRP",
+    "XXLM": "XLM",  # Stellar
+    "XXMR": "XMR",  # Monero
+    "XXRP": "XRP",  # Ripple
     "ZUSD": "USD",
 }
 
 
 class Importer(beangulp.Importer):
-    """An importer for Kraken Ledger JSON Export."""
+    """An importer for Kraken Balance JSON Export."""
 
     def __init__(self, base_account, assets_map=default_assets_map):
         self.base_account = base_account
