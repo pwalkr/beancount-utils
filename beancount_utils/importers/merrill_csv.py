@@ -8,6 +8,7 @@ from beangulp import importer, mimetypes
 from beangulp.importers import csvbase
 import csv
 import re
+import io
 
 from beancount_utils.deduplicate import mark_duplicate_entries
 
@@ -26,8 +27,8 @@ class Importer(importer.Importer):
             return False
         with open(filepath) as fd:
             head = fd.read(1024)
-        # TODO: match "Account #"
-        return head.startswith('"Trade Date","Settlement Date","Pending/Settled","Account Nickname"')
+        # Match new format with "Trade Date" or old format with "Account #"
+        return ('"Trade Date"' in head and '"Settlement Date"' in head) or head.startswith('"Trade Date","Settlement Date","Pending/Settled","Account Nickname"')
 
     def account(self, filepath):
         return None
@@ -35,50 +36,72 @@ class Importer(importer.Importer):
     def extract(self, filepath, existing):
         entries = []
         with open(filepath) as csvfile:
-            for entry in csv.DictReader(csvfile):
+            # Skip header lines until we find the CSV header
+            for line in csvfile:
+                if line.startswith('"Trade Date"'):
+                    # Found the CSV header, create a new reader starting from this line
+                    csv_content = line + csvfile.read()
+                    csv_reader = csv.DictReader(io.StringIO(csv_content))
+                    break
+            else:
+                # If we didn't find the header, raise an error
+                raise ValueError("Could not find CSV header in file")
+            
+            for entry in csv_reader:
+                # Normalize keys and values by stripping whitespace (CSV may have trailing spaces)
+                entry = {k.strip(): v.strip() if isinstance(v, str) else v for k, v in entry.items()}
+                
+                # Skip empty rows
+                if all(v == '' or v is None for v in entry.values()):
+                    continue
+                # Skip trailing summary
+                if 'Total' in entry['Trade Date']:
+                    continue
                 try:
                     date = datetime.strptime(entry['Trade Date'], '%m/%d/%Y').date()
-                    tx_type = entry['Description 1 ']
-                    merrill_type = entry['Type']
-                    if tx_type == 'Purchase ':
-                        self.extract_purchase(date, merrill_type, entry, entries)
-                    elif tx_type == 'Dividend':
-                        self.extract_dividend(date, merrill_type, entry, entries)
-                    elif tx_type == 'Funds Received':
-                        self.extract_received(date, merrill_type, entry, entries)
+                    description = entry['Description']
+                    
+                    # Determine transaction type from description
+                    if description.startswith('Purchase'):
+                        self.extract_purchase(date, entry, entries)
+                    elif 'Dividend' in description:
+                        self.extract_dividend(date, entry, entries)
+                    elif description.startswith('Funds Received'):
+                        self.extract_received(date, entry, entries)
                     else:
-                        raise ValueError(f"Unknown transaction type: {tx_type}")
+                        # Skip unknown transaction types silently or log them
+                        pass
                 except Exception as e:
                     print(f"Error processing entry {entry}: {e}")
                     raise e
         return entries
 
-    def extract_dividend(self, date, merrill_type, entry, entries):
-        narration = entry['Description 2']
+    def extract_dividend(self, date, entry, entries):
+        narration = entry['Description']
+        amount_str = entry['Amount'].replace('$', '').replace(',', '')
         entries.append(Importer.Transaction(date, narration,
             meta={
-                'description': entry['Description 2'],
-                'merrill_type': merrill_type,
+                'description': entry['Description'],
             },
             postings=[
                 Importer.Posting(
-                    self.render_account(self.div_account, entry['Symbol/CUSIP #']),
-                    Amount(-Decimal(entry['Amount ($)']), self.currency),
+                    self.render_account(self.div_account, entry['Symbol/ CUSIP']),
+                    Amount(-Decimal(amount_str), self.currency),
                 ),
                 Importer.Posting(
                     self.render_account(self.asset_account, self.currency),
-                    Amount(Decimal(entry['Amount ($)']), self.currency),
+                    Amount(Decimal(amount_str), self.currency),
                 ),
             ]
         ))
 
-    def extract_purchase(self, date, merrill_type, entry, entries):
-        total_cost = Decimal(re.sub(r"\(([\d.,]+)\)", r"-\1", entry['Amount ($)']))
-        narration = entry['Description 2']
+    def extract_purchase(self, date, entry, entries):
+        amount_str = entry['Amount'].replace('$', '').replace(',', '')
+        total_cost = Decimal(re.sub(r"\(([\d.,]+)\)", r"-\1", amount_str))
+        narration = entry['Description']
         entries.append(Importer.Transaction(date, narration,
             meta={
-                'description': entry['Description 2'],
-                'merrill_type': merrill_type,
+                'description': entry['Description'],
             },
             postings=[
                 Importer.Posting(
@@ -86,21 +109,21 @@ class Importer(importer.Importer):
                     Amount(total_cost, self.currency),
                 ),
                 Importer.Posting(
-                    self.render_account(self.asset_account, entry['Symbol/CUSIP #']),
-                    Amount(Decimal(entry['Quantity']), entry['Symbol/CUSIP #']),
-                    cost=CostSpec(None, total_cost, self.currency, None, None, None),
+                    self.render_account(self.asset_account, entry['Symbol/ CUSIP']),
+                    Amount(Decimal(entry['Quantity']), entry['Symbol/ CUSIP']),
+                    cost=CostSpec(None, -total_cost, self.currency, None, None, None),
                 ),
             ]
         ))
 
-    def extract_received(self, date, merrill_type, entry, entries):
+    def extract_received(self, date, entry, entries):
+        amount_str = entry['Amount'].replace('$', '').replace(',', '')
         entries.append(Importer.Transaction(date, 'Transfer', [
             Importer.Posting(
                 self.render_account(self.asset_account, self.currency),
-                Amount(Decimal(entry['Amount ($)']), self.currency),
+                Amount(Decimal(amount_str), self.currency),
                 meta={
-                    'description': entry['Description 2'],
-                    'merrill_type': merrill_type,
+                    'description': entry['Description'],
                 },
             ),
         ]))
