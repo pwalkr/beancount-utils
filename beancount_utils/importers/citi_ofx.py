@@ -60,6 +60,7 @@ class Importer(beangulp.Importer):
 
     def __init__(self, acctid_regexp, account, basename=None,
                  balance_type=BalanceType.DECLARED,
+                 ignore_membership=True,
                  decorator=None):
         """Create a new importer posting to the given account.
 
@@ -74,6 +75,7 @@ class Importer(beangulp.Importer):
         self.importer_account = account
         self.basename = basename
         self.balance_type = balance_type
+        self.ignore_membership = ignore_membership
         self.decorator = decorator
 
     def identify(self, filepath):
@@ -106,7 +108,7 @@ class Importer(beangulp.Importer):
         with open(filepath) as fd:
             soup = bs4.BeautifulSoup(fd, 'lxml')
         entries, self.imported_ids = extract(soup, filepath, self.acctid_regexp, self.importer_account,
-                       flags.FLAG_WARNING, self.balance_type)
+                       flags.FLAG_WARNING, self.balance_type, self.ignore_membership)
         return entries
 
     def deduplicate(self, entries, existing):
@@ -120,7 +122,7 @@ class Importer(beangulp.Importer):
             self.decorator.decorate(entries)
 
 
-def extract(soup, filename, acctid_regexp, account, flag, balance_type):
+def extract(soup, filename, acctid_regexp, account, flag, balance_type, ignore_membership):
     """Extract transactions from an OFX file.
 
     Args:
@@ -129,6 +131,7 @@ def extract(soup, filename, acctid_regexp, account, flag, balance_type):
       account: An account string onto which to post the amounts found in the file.
       flag: A single-character string.
       balance_type: An enum of type BalanceType.
+      ignore_membership: A boolean indicating whether to ignore membership fee transactions with 0 amount.
     Returns:
       A sorted list of entries.
     """
@@ -144,6 +147,11 @@ def extract(soup, filename, acctid_regexp, account, flag, balance_type):
         # Count transactions per date for input to import_id hash
         date_indices = {}
         for stmttrn in transactions:
+            if ignore_membership:
+                payee = find_child(stmttrn, 'name', saxutils.unescape)
+                amount_val = find_child(stmttrn, 'trnamt', D)
+                if payee and amount_val is not None and 'MEMBERSHIP FEE' in payee and amount_val == D('0'):
+                    continue
             index = get_date_index(stmttrn, date_indices)
             entry, import_id = build_transaction(stmttrn, flag, account, currency, index)
             imported_ids.add(import_id)
