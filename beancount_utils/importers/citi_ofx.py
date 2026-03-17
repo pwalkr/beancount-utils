@@ -41,7 +41,7 @@ import beangulp
 from beangulp import mimetypes
 from beangulp.extract import mark_duplicate_entries
 
-from beancount_utils.deduplicate import comparator, warn_duplicate_import_id
+from beancount_utils.posting_deduplicator import PostingDeduplicator
 
 
 logger = logging.getLogger(__name__)
@@ -107,22 +107,20 @@ class Importer(beangulp.Importer):
         """Extract a list of partially complete transactions from the file."""
         with open(filepath) as fd:
             soup = bs4.BeautifulSoup(fd, 'lxml')
-        entries, self.imported_ids = extract(soup, filepath, self.acctid_regexp, self.importer_account,
-                       flags.FLAG_WARNING, self.balance_type, self.ignore_membership)
+        self.pdup = PostingDeduplicator(self.importer_account, 'citi-ofx', logger)
+        entries = extract(soup, filepath, self.acctid_regexp, self.importer_account,
+                       flags.FLAG_WARNING, self.balance_type, self.ignore_membership, self.pdup)
         return entries
 
     def deduplicate(self, entries, existing):
-        warn_duplicate_import_id(self.importer_account, existing, logger)
-        window = datetime.timedelta(days=2)
-        cmp = comparator(self.importer_account, logger, self.imported_ids)
-        mark_duplicate_entries(entries, existing, window, cmp)
+        self.pdup.deduplicate(entries, existing)
 
         # Decorate after marking dupes to avoid interfering with the duplicate detection.
         if self.decorator:
             self.decorator.decorate(entries)
 
 
-def extract(soup, filename, acctid_regexp, account, flag, balance_type, ignore_membership):
+def extract(soup, filename, acctid_regexp, account, flag, balance_type, ignore_membership, pdup):
     """Extract transactions from an OFX file.
 
     Args:
@@ -152,9 +150,7 @@ def extract(soup, filename, acctid_regexp, account, flag, balance_type, ignore_m
                 amount_val = find_child(stmttrn, 'trnamt', D)
                 if payee and amount_val is not None and 'MEMBERSHIP FEE' in payee and amount_val == D('0'):
                     continue
-            index = get_date_index(stmttrn, date_indices)
-            entry, import_id = build_transaction(stmttrn, flag, account, currency, index)
-            imported_ids.add(import_id)
+            entry = build_transaction(stmttrn, flag, account, currency, pdup)
             entry = entry._replace(meta=data.new_metadata(filename, next(counter)))
             stmt_entries.append(entry)
         stmt_entries = data.sorted(stmt_entries)
@@ -176,7 +172,7 @@ def extract(soup, filename, acctid_regexp, account, flag, balance_type, ignore_m
                                          None, None)
             new_entries.append(balance_entry)
 
-    return data.sorted(new_entries), imported_ids
+    return data.sorted(new_entries)
 
 
 def get_date_index(stmttrn, date_indices):
@@ -297,7 +293,7 @@ def find_child(node, name, conversion=None):
     return value
 
 
-def build_transaction(stmttrn, flag, account, currency, index):
+def build_transaction(stmttrn, flag, account, currency, pdup):
     """Build a single transaction.
 
     Args:
@@ -325,21 +321,11 @@ def build_transaction(stmttrn, flag, account, currency, index):
     number = find_child(stmttrn, 'trnamt', D)
     units = amount.Amount(number, currency)
 
-    # Generate ID from fields that are likely to uniquely identify the transaction
-    id_fields = [
-        str(date),
-        str(number),
-        str(payee) if payee else '',
-        str(trntype) if trntype else '',
-        str(description) if description else '',
-        str(index)
-    ]
-    import_id = 'ofx-' + hashlib.sha256('|'.join(id_fields).encode()).hexdigest()[:16]
-
-    posting_meta = {'description': description, 'import_id': import_id}
+    posting_meta = {'description': description}
     posting = data.Posting(account, units, None, None, None, posting_meta)
+    pdup.mark_posting(date, description, posting)
 
     # Build the transaction with a single leg.
     fileloc = data.new_metadata('<build_transaction>', 0)
     return data.Transaction(fileloc, date, flag, payee, None,
-                            data.EMPTY_SET, data.EMPTY_SET, [posting]), import_id
+                            data.EMPTY_SET, data.EMPTY_SET, [posting])
