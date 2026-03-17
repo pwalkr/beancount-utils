@@ -107,8 +107,9 @@ class Importer(beangulp.Importer):
         """Extract a list of partially complete transactions from the file."""
         with open(filepath) as fd:
             soup = bs4.BeautifulSoup(fd, 'lxml')
-        entries, self.imported_ids = extract(soup, filepath, self.acctid_regexp, self.importer_account,
-                       flags.FLAG_WARNING, self.balance_type, self.ignore_membership)
+        pdup = PostingDeduplicator(self.importer_account, 'citi-ofx', logger)
+        entries, = extract(soup, filepath, self.acctid_regexp, self.importer_account,
+                       flags.FLAG_WARNING, self.balance_type, self.ignore_membership, pdup)
         return entries
 
     def deduplicate(self, entries, existing):
@@ -122,7 +123,7 @@ class Importer(beangulp.Importer):
             self.decorator.decorate(entries)
 
 
-def extract(soup, filename, acctid_regexp, account, flag, balance_type, ignore_membership):
+def extract(soup, filename, acctid_regexp, account, flag, balance_type, ignore_membership, pdup):
     """Extract transactions from an OFX file.
 
     Args:
@@ -152,9 +153,7 @@ def extract(soup, filename, acctid_regexp, account, flag, balance_type, ignore_m
                 amount_val = find_child(stmttrn, 'trnamt', D)
                 if payee and amount_val is not None and 'MEMBERSHIP FEE' in payee and amount_val == D('0'):
                     continue
-            index = get_date_index(stmttrn, date_indices)
-            entry, import_id = build_transaction(stmttrn, flag, account, currency, index)
-            imported_ids.add(import_id)
+            entry = build_transaction(stmttrn, flag, account, currency, pdup)
             entry = entry._replace(meta=data.new_metadata(filename, next(counter)))
             stmt_entries.append(entry)
         stmt_entries = data.sorted(stmt_entries)
@@ -297,7 +296,7 @@ def find_child(node, name, conversion=None):
     return value
 
 
-def build_transaction(stmttrn, flag, account, currency, index):
+def build_transaction(stmttrn, flag, account, currency, pdup):
     """Build a single transaction.
 
     Args:
