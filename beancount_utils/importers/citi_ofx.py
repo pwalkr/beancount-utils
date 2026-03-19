@@ -107,16 +107,13 @@ class Importer(beangulp.Importer):
         """Extract a list of partially complete transactions from the file."""
         with open(filepath) as fd:
             soup = bs4.BeautifulSoup(fd, 'lxml')
-        pdup = PostingDeduplicator(self.importer_account, 'citi-ofx', logger)
-        entries, = extract(soup, filepath, self.acctid_regexp, self.importer_account,
-                       flags.FLAG_WARNING, self.balance_type, self.ignore_membership, pdup)
+        self.pdup = PostingDeduplicator(self.importer_account, 'citi-ofx', logger)
+        entries = extract(soup, filepath, self.acctid_regexp, self.importer_account,
+                       flags.FLAG_WARNING, self.balance_type, self.ignore_membership, self.pdup)
         return entries
 
     def deduplicate(self, entries, existing):
-        warn_duplicate_import_id(self.importer_account, existing, logger)
-        window = datetime.timedelta(days=2)
-        cmp = comparator(self.importer_account, logger, self.imported_ids)
-        mark_duplicate_entries(entries, existing, window, cmp)
+        self.pdup.deduplicate(entries, existing)
 
         # Decorate after marking dupes to avoid interfering with the duplicate detection.
         if self.decorator:
@@ -175,7 +172,7 @@ def extract(soup, filename, acctid_regexp, account, flag, balance_type, ignore_m
                                          None, None)
             new_entries.append(balance_entry)
 
-    return data.sorted(new_entries), imported_ids
+    return data.sorted(new_entries)
 
 
 def get_date_index(stmttrn, date_indices):
@@ -324,19 +321,9 @@ def build_transaction(stmttrn, flag, account, currency, pdup):
     number = find_child(stmttrn, 'trnamt', D)
     units = amount.Amount(number, currency)
 
-    # Generate ID from fields that are likely to uniquely identify the transaction
-    id_fields = [
-        str(date),
-        str(number),
-        str(payee) if payee else '',
-        str(trntype) if trntype else '',
-        str(description) if description else '',
-        str(index)
-    ]
-    import_id = 'ofx-' + hashlib.sha256('|'.join(id_fields).encode()).hexdigest()[:16]
-
-    posting_meta = {'description': description, 'import_id': import_id}
+    posting_meta = {'description': description}
     posting = data.Posting(account, units, None, None, None, posting_meta)
+    pdup.mark_posting(date, description, posting)
 
     # Build the transaction with a single leg.
     fileloc = data.new_metadata('<build_transaction>', 0)
