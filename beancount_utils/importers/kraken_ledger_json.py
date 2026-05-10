@@ -49,6 +49,7 @@ class Importer(beangulp.Importer):
     def account(self, filepath):
         return self.base_account
 
+
     def extract(self, filepath, existing):
         entries = []
 
@@ -71,12 +72,31 @@ class Importer(beangulp.Importer):
                     narration = extract_narration(group, self.base_currency)
                     postings = self._extract_postings(group)
                     entries.append(Transaction(meta, date.date(), '*', None, narration, frozenset(), frozenset(), postings))
+                elif ledger_type == 'withdrawal':
+                    entries.append(self._extract_withdrawal(date.date(), meta, group))
                 else:
                     print(f"Unknown ledger type: {ledger_type}\n{group}")
                 if False:
                     entries.extend(extract_balances(group, filepath, date, self.base_account))
 
         return entries
+
+    def _extract_withdrawal(self, date, meta, group):
+        # Assumes group contains only one withdrawal entry
+        ledger = group[0]
+        asset = ledger['asset']
+        account = self.get_asset_account(asset)
+        amount = Amount(Decimal(ledger['amount']), asset)
+        fee = Amount(Decimal(ledger['fee']), asset)
+        narration = f"Withdrawal {asset}"
+
+        postings = [
+            Posting(account, amount, None, None, None, None)
+        ]
+        if self.fee_account and fee.number != Decimal('0'):
+            postings.append(Posting(self.fee_account, fee, None, None, None, None))
+
+        return Transaction(meta, date, '*', None, narration, frozenset(), frozenset(), postings)
 
     def get_asset_account(self, asset):
         return self.base_account + ':' + asset
