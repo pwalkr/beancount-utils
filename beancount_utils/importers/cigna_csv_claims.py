@@ -16,7 +16,7 @@ ClaimInfo = namedtuple('ClaimInfo', ['provider', 'patient', 'year'])
 
 
 class Importer(importer.Importer):
-    def __init__(self, currency, base_account=None, leaf_account=None, decorate=None, import_zero=False, tag_deductible='Medical-Deductible', tag_moop='Medical-OOP'):
+    def __init__(self, currency, base_account=None, leaf_account=None, decorate=None, import_zero=False, tag_deductible=None):
         self.base_account = base_account
         self.leaf_account = leaf_account
         self.currency = currency
@@ -27,7 +27,6 @@ class Importer(importer.Importer):
         # Keep track for deduplication
         self.found_accounts = set()
         self.tag_deductible = tag_deductible
-        self.tag_moop = tag_moop
 
     def identify(self, filepath):
         mimetype, encoding = mimetypes.guess_type(filepath)
@@ -67,8 +66,6 @@ class Importer(importer.Importer):
                     tags = []
                     if self.tag_deductible:
                         tags.append(self.tag_deductible)
-                    if self.tag_moop:
-                        tags.append(self.tag_moop)
                     entries.append(data.Transaction(meta, date.date(), flag,
                                    payee, narration, frozenset(tags), frozenset(), postings))
 
