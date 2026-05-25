@@ -35,7 +35,8 @@ class Importer(importer.Importer):
             return False
         with open(filepath) as fd:
             head = fd.read(1024)
-        return head.startswith('"Service Date","Patient","Provider","Status","Billed","Plan Paid","Patient Responsibility","I Owe","My Payments"')
+        expected = 'Service Date,Patient,Provider,Status,Billed,Plan Paid,Patient Responsibility,I Owe,My Payments'
+        return head.startswith(expected) or head.startswith('"Service Date","Patient","Provider","Status","Billed","Plan Paid","Patient Responsibility","I Owe","My Payments"')
 
     def account(self, filepath):
         return None
