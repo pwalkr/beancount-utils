@@ -8,8 +8,6 @@ from beangulp.importers import csvbase
 import csv
 import re
 
-from beancount_utils.deduplicate import mark_duplicate_entries
-
 
 # Used by leaf_account function to create a unique account name
 ClaimInfo = namedtuple('ClaimInfo', ['provider', 'patient', 'year'])
@@ -90,8 +88,8 @@ class Importer(importer.Importer):
         return ':'.join(parts)
 
     def deduplicate(self, entries, existing):
-        for account in self.found_accounts:
-            mark_duplicate_entries(entries, existing, account)
+        super().deduplicate(entries, existing)
+
         # Decorate after marking duplicates so extra target postings don't interfere
         if self.decorate:
             self.decorate(entries)
