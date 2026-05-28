@@ -48,16 +48,16 @@ class Importer(importer.Importer):
                 self.found_accounts.add(account)
                 payee = entry['Provider']
                 narration = entry['Patient']
+                meta = data.new_metadata(filepath, 0, {
+                    'provider': entry['Provider'],
+                    'patient': entry['Patient'],
+                })
                 amount = self.fix_amount(entry['Patient Responsibility'])
                 if amount:
                     amount = round(-Decimal(amount), 2)
                 else:
                     amount = Decimal(0)
                 units = data.Amount(amount, self.currency)
-
-                meta = data.new_metadata(filepath, 0, {
-                    'provider': payee
-                })
 
                 if amount.__abs__() >= 0.01 or self.import_zero:
                     postings = [data.Posting(account, units, None, None, None, None)]
