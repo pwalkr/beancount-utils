@@ -1,4 +1,5 @@
 beancount
 ofxtools
+pdfplumber
 pypdf
 pytest
