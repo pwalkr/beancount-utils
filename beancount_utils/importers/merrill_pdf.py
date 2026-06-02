@@ -464,8 +464,11 @@ class Importer(beangulp.Importer):
             return f"B{c}"
         if name in name_to_ticker:
             return name_to_ticker[name]
+        # Match normalized name against normalized ticker items
+        norm = re.sub(r"[^A-Z0-9]", "", name.upper())
         for n, t in name_to_ticker.items():
-            if name.startswith(n) or n.startswith(name):
+            n_norm = re.sub(r"[^A-Z0-9]", "", n.upper())
+            if norm and (n_norm.startswith(norm) or norm.startswith(n_norm)):
                 return t
         if cusip:
             raise KeyError(
