@@ -489,7 +489,13 @@ class Importer(beangulp.Importer):
             return False
         if "Fidelity" not in text and "FIDELITY" not in text:
             return False
-        return PERIOD_RE.search(text) is not None
+        if PERIOD_RE.search(text) is None:
+            return False
+        with pdfplumber.open(filepath) as pdf:
+            if len(pdf.pages) < 2:
+                return False
+            page2 = pdf.pages[1].extract_text() or ""
+        return any(acct_id in page2 for acct_id in self._accounts)
 
     def account(self, filepath):
         # When multiple accounts share a PDF, return the first
