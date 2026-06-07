@@ -20,6 +20,11 @@ class Importer(csvbase.Importer):
         })
     skiplines = 2
 
+    def __init__(self, account, currency, user_id, **kwargs):
+        super().__init__(account, currency, **kwargs)
+        self.currency = currency
+        self.user_id = user_id
+
     def extract(self, filepath, existing):
         entries = []
         balances = defaultdict(list)
@@ -107,14 +112,12 @@ class Importer(csvbase.Importer):
         return entries
 
     def identify(self, filepath):
-        if not path.basename(filepath).startswith('Venmo'):
-            return False
         mimetype, encoding = mimetypes.guess_type(filepath)
         if mimetype != 'text/csv':
             return False
         with open(filepath) as fd:
             head = fd.read(1024)
-        return head.startswith('Account Statement - ')
+        return head.startswith(f'Account Statement - ({self.user_id})')
 
     def deduplicate(self, entries, existing):
         mark_duplicate_entries(entries, existing, self.importer_account)
