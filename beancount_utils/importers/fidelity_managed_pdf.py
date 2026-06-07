@@ -108,6 +108,14 @@ FEE_RE = re.compile(
     r"^(\d{2}/\d{2})\s+(.+?)\s+-\$?([\d,]+\.\d{2})$"
 )
 
+# Tax-withheld row: "MM/DD <security name> <tax description> -$amount".
+TAX_RE = re.compile(
+    r"^(\d{2}/\d{2})\s+(.+?)\s+"
+    r"(Foreign Tax Paid|Federal Tax Withheld|State Tax Withheld|"
+    r"Backup Withholding|Non-Resident Alien Tax Withheld)\s+"
+    r"-?\$?-?([\d,]+\.\d{2})$"
+)
+
 CHANGE_IN_VALUE_RE = re.compile(
     r"^Change in Investment Value\s*\*?\s+(-?[\d,]+\.\d{2})\b"
 )
@@ -244,8 +252,9 @@ def parse_activity(
         "contributions": [],
         "fees": [],
         "trades": [],
+        "taxes": [],
     }
-    section = None  # 'div' | 'contrib' | 'fees' | 'trades' | 'skip' | None
+    section = None  # 'div' | 'contrib' | 'fees' | 'trades' | 'taxes' | 'skip' | None
     pending_div = None  # last dividend dict for name-wrap continuation
 
     def to_d(month, day):
@@ -293,6 +302,10 @@ def parse_activity(
             continue
         if s.startswith("Fees and Charges"):
             section = "fees"
+            pending_div = None
+            continue
+        if s.startswith("Taxes Withheld"):
+            section = "taxes"
             pending_div = None
             continue
         if s.startswith("Total "):
@@ -391,6 +404,21 @@ def parse_activity(
                     "side": side,
                     "quantity": to_decimal(qty),
                     "price": to_decimal(price),
+                    "amount": to_decimal(amount),
+                })
+            continue
+
+        if section == "taxes":
+            if s.startswith("Date "):
+                continue
+            tm = TAX_RE.match(s)
+            if tm:
+                mm_dd, name, kind, amount = tm.groups()
+                month, day = mm_dd.split("/")
+                out["taxes"].append({
+                    "date": to_d(month, day),
+                    "name": name.strip(),
+                    "kind": kind,
                     "amount": to_decimal(amount),
                 })
             continue
@@ -553,6 +581,11 @@ class Importer(beangulp.Importer):
             )
             entries.extend(
                 self._emit_fees(activity["fees"], acct_id, filepath)
+            )
+            entries.extend(
+                self._emit_taxes(
+                    activity["taxes"], name_to_ticker, acct_id, filepath,
+                )
             )
             entries.extend(
                 self._emit_balances(holdings, next_day, acct_id, filepath)
@@ -770,6 +803,36 @@ class Importer(beangulp.Importer):
             ))
         return out
 
+    def _emit_taxes(self, taxes, name_to_ticker, acct_id, filepath):
+        expenses = self._accounts[acct_id].get("expense_account")
+        out = []
+        for t in taxes:
+            amt = -t["amount"]
+            ticker = resolve_ticker(t["name"], name_to_ticker)
+            narration = f"{t['kind']} - {ticker}" if ticker else t["kind"]
+            postings = [
+                Posting(
+                    self.cash_account(acct_id),
+                    Amount(amt, self.currency),
+                    None, None, None, None,
+                ),
+            ]
+            if expenses:
+                postings.append(
+                    Posting(expenses, None, None, None, None, None)
+                )
+            out.append(Transaction(
+                meta=new_metadata(filepath, 0),
+                date=t["date"],
+                flag="*",
+                payee=PAYEE_FIDELITY,
+                narration=narration,
+                tags=frozenset(),
+                links=frozenset(),
+                postings=postings,
+            ))
+        return out
+
     def _emit_summary(self, lines, activity, end, next_day, acct_id, filepath):
         """Single Change-in-Value txn + fee txns + ending balance, no leaves."""
         cfg = self._accounts[acct_id]
@@ -817,6 +880,24 @@ class Importer(beangulp.Importer):
                 flag="*",
                 payee=PAYEE_FIDELITY,
                 narration=f["description"],
+                tags=frozenset(),
+                links=frozenset(),
+                postings=postings,
+            ))
+
+        for t in activity["taxes"]:
+            amt = -t["amount"]
+            postings = [
+                Posting(base, Amount(amt, self.currency), None, None, None, None),
+            ]
+            if expenses:
+                postings.append(Posting(expenses, None, None, None, None, None))
+            out.append(Transaction(
+                meta=new_metadata(filepath, 0),
+                date=t["date"],
+                flag="*",
+                payee=PAYEE_FIDELITY,
+                narration=t["kind"],
                 tags=frozenset(),
                 links=frozenset(),
                 postings=postings,
