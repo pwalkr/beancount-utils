@@ -1,6 +1,8 @@
 from collections import defaultdict
 from os import path
 import sys
+from decimal import Decimal
+
 from beancount.core import data
 from beangulp import mimetypes
 from beangulp.importers import csvbase
@@ -12,6 +14,7 @@ class Importer(csvbase.Importer):
     date = csvbase.Date('Datetime', '%Y-%m-%dT%H:%M:%S')
     party_from = csvbase.Columns('From')
     party_to = csvbase.Columns('To')
+    funding_source = csvbase.Columns('Funding Source')
     narration = csvbase.Columns('Note')
     amount = csvbase.Amount('Amount (total)', {
         r'\+ \$': '',
@@ -20,10 +23,12 @@ class Importer(csvbase.Importer):
         })
     skiplines = 2
 
-    def __init__(self, account, currency, user_id, **kwargs):
+    def __init__(self, account, currency, user_id, fund_source=None, add_zero_posting=True, **kwargs):
         super().__init__(account, currency, **kwargs)
         self.currency = currency
         self.user_id = user_id
+        self.fund_source = fund_source
+        self.add_zero_posting = add_zero_posting
 
     def extract(self, filepath, existing):
         entries = []
@@ -60,6 +65,19 @@ class Importer(csvbase.Importer):
                 # Set payee to "the other party"
                 payee = party_to if row.amount < 0 else party_from
 
+                if self.fund_source and getattr(row, "funding_source", None) and getattr(row, "funding_source", None) != "Venmo balance":
+                    # Add a posting to the fund source account for the full amount.
+                    postings = [
+                        data.Posting(self.fund_source, units, None, None, None, None)
+                    ]
+                    # Zero posting links the transaction to venmo account without affecting the amount.
+                    if self.add_zero_posting:
+                        postings.append(
+                            data.Posting(account, data.Amount(Decimal(0), currency), None, None, None, None)
+                        )
+                else:
+                    postings = [ data.Posting(account, units, None, None, None, None) ]
+
                 # Create a transaction.
                 txn = data.Transaction(
                     self.metadata(filepath, lineno, row),
@@ -69,9 +87,7 @@ class Importer(csvbase.Importer):
                     row.narration,
                     tags,
                     links,
-                    [
-                        data.Posting(account, units, None, None, None, None),
-                    ],
+                    postings,
                 )
 
                 # Apply user processing to the transaction.
