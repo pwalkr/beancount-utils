@@ -1,4 +1,5 @@
 import datetime
+from decimal import Decimal
 from beancount.core import data
 from beangulp.extract import DUPLICATE
 
@@ -102,6 +103,20 @@ def mark_duplicate_postings(entries, context, account, window=datetime.timedelta
                     if p is posting.posting:
                         posting.entry.postings[x] = posting.posting._replace(flag='!')
                 break
+
+
+def mark_duplicate_balances(entries, context, window=datetime.timedelta(days=2), tolerance=Decimal('0.0001')):
+    for entry in entries:
+        if isinstance(entry, data.Balance):
+            for candidate in context:
+                if (isinstance(candidate, data.Balance)
+                        and entry.account == candidate.account
+                        and abs(entry.date - candidate.date) <= window
+                        and entry.amount.currency == candidate.amount.currency
+                        and abs(entry.amount.number - candidate.amount.number) <= tolerance):
+                    # Mark similar to beangulp.extract.mark_duplicate_entries
+                    entry.meta[DUPLICATE] = candidate
+                    break
 
 
 def mark_duplicate_prices(entries, context):

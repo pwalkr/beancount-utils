@@ -9,6 +9,8 @@ import beangulp
 
 from beancount.core.data import Amount, Balance, new_metadata
 
+from beancount_utils.deduplicate import mark_duplicate_balances
+
 
 default_assets_map = {
     "XBT": "BTC",
@@ -68,6 +70,9 @@ class Importer(beangulp.Importer):
             amount = Amount(Decimal(balance), asset)
             entries.append(Balance(meta, date, account, amount, None, None))
         return entries
+
+    def deduplicate(self, entries, existing):
+        mark_duplicate_balances(entries, existing)
 
     def combine_stakes(self, raw_balances):
         """Combine .F, .S, balances into a single entry."""
