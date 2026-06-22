@@ -20,3 +20,7 @@ digest = "beancount_utils.digest:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["beancount_utils"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
