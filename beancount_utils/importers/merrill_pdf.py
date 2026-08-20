@@ -9,6 +9,8 @@ Emits:
   - one Deposit/Withdrawal per Electronic Transfer row
   - one balance assertion per held commodity at period-end + 1 day
     (cash held in the sweep account asserts in `currency`)
+  - one price directive per held commodity at period-end, from the
+    "Estimated Market Price" column of the holdings tables
 
 Account layout:
   Assets:               {account}:{COMMODITY}      (cash uses :USD)
@@ -28,7 +30,7 @@ from decimal import Decimal
 
 import pdfplumber
 
-from beancount.core.data import Amount, Balance, Posting, Transaction, new_metadata
+from beancount.core.data import Amount, Balance, Posting, Price, Transaction, new_metadata
 from beancount.core.position import CostSpec
 import beangulp
 from beangulp import mimetypes
@@ -170,7 +172,11 @@ def parse_holdings(lines: list[str]) -> tuple[dict[str, dict], Decimal]:
     """Return (holdings, cash_total).
 
     holdings keyed by commodity (ticker for ETPs, B<cusip> for bonds).
-    Each value: {name, quantity, ending_value, kind in {"etp","bond"}}.
+    Each value: {name, quantity, ending_value, price, kind in {"etp","bond"}}.
+
+    `price` is per unit of the commodity: taken as printed for ETPs, and
+    divided by 100 for bonds, whose market price is quoted per $100 of face
+    value while quantity counts face value dollars.
     """
     holdings: dict[str, dict] = {}
     cash_total = Decimal(0)
@@ -218,6 +224,7 @@ def parse_holdings(lines: list[str]) -> tuple[dict[str, dict], Decimal]:
                         "name": full_name,
                         "quantity": qty,
                         "ending_value": mv,
+                        "price": to_decimal(m.group(3)),
                         "kind": "etp",
                     }
                     i += 2
@@ -238,6 +245,7 @@ def parse_holdings(lines: list[str]) -> tuple[dict[str, dict], Decimal]:
                         "name": name,
                         "quantity": qty,
                         "ending_value": mv,
+                        "price": to_decimal(m.group(4)) / 100,
                         "kind": "bond",
                     }
                     i += 2
@@ -612,6 +620,16 @@ class Importer(beangulp.Importer):
                 amount=Amount(h["quantity"], commodity),
                 tolerance=None,
                 diff_amount=None,
+            ))
+
+        for commodity, h in holdings.items():
+            if h.get("price") is None:
+                continue
+            entries.append(Price(
+                meta=new_metadata(filepath, 0),
+                date=end,
+                currency=commodity,
+                amount=Amount(h["price"], self.currency),
             ))
 
         return entries
