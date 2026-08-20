@@ -22,6 +22,9 @@ For each configured account the importer emits:
   - Per-holding balance assertions at period-end + 1 day.
     The core/sweep fund (Core Account or Short-term Funds money market)
     is treated as cash and asserted in USD.
+  - Per-holding price directives at period-end, from the "Price Per Unit"
+    column of the Holdings tables (the cash fund is priced at $1 and is
+    skipped).
 
 Sweep activity in the "Core Fund Activity" table is intentionally ignored
 because it is just the internal representation of cash flows that are
@@ -33,7 +36,9 @@ from decimal import Decimal
 
 import pdfplumber
 
-from beancount.core.data import Amount, Balance, Posting, Transaction, new_metadata
+from beancount.core.data import (
+    Amount, Balance, Posting, Price, Transaction, new_metadata,
+)
 from beancount.core.position import CostSpec
 import beangulp
 from beangulp import mimetypes
@@ -582,6 +587,7 @@ class Importer(beangulp.Importer):
 
         entries = []
         next_day = end + timedelta(days=1)
+        priced: set[str] = set()  # one price per commodity per statement
 
         for acct_id, cfg in self._accounts.items():
             if acct_id not in account_lines:
@@ -632,6 +638,7 @@ class Importer(beangulp.Importer):
             entries.extend(
                 self._emit_balances(holdings, next_day, acct_id, filepath)
             )
+            entries.extend(self._emit_prices(holdings, end, filepath, priced))
 
         return entries
 
@@ -954,6 +961,25 @@ class Importer(beangulp.Importer):
             tolerance=None,
             diff_amount=None,
         ))
+        return out
+
+    def _emit_prices(self, holdings, end, filepath, priced):
+        out = []
+        for ticker, h in holdings.items():
+            if h["is_cash"]:
+                # The sweep fund is booked as USD, so its $1.00 quote is
+                # not a price for any commodity in the ledger.
+                continue
+            if ticker in priced:
+                # Same fund held in more than one account on the statement.
+                continue
+            priced.add(ticker)
+            out.append(Price(
+                meta=new_metadata(filepath, 0),
+                date=end,
+                currency=ticker,
+                amount=Amount(h["price"], self.currency),
+            ))
         return out
 
     def _emit_balances(self, holdings, next_day, acct_id, filepath):

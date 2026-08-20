@@ -1,7 +1,8 @@
 """Tests for the Fidelity multi-account INVESTMENT REPORT importer."""
+from datetime import date
 from decimal import Decimal
 
-import pytest
+from beancount.core.data import Amount, Price
 
 from beancount_utils.importers import fidelity_managed_pdf as mod
 
@@ -103,3 +104,22 @@ def test_reinvestment_debits_cash(monkeypatch):
     assert cash.account == "Assets:US:Fidelity:HSA:USD"
     assert cash.units.number == Decimal("-48.95")
     assert shares.units.number == Decimal("1.693")
+
+
+def test_price_directive_per_held_commodity(monkeypatch):
+    entries = extract(
+        monkeypatch, MANAGED_STATEMENT, "Y80-409811", "Assets:US:Fidelity:HSA"
+    )
+    prices = {e.currency: e for e in entries if isinstance(e, Price)}
+    assert set(prices) == {"FDFIX", "FITFX"}
+    assert prices["FITFX"].date == date(2026, 4, 30)
+    assert prices["FITFX"].amount == Amount(Decimal("18.4700"), "USD")
+
+
+def test_cash_fund_is_not_priced(monkeypatch):
+    entries = extract(
+        monkeypatch, BROKERAGE_STATEMENT,
+        "266-014480", "Assets:US:Fidelity:RothIRA",
+    )
+    prices = [e for e in entries if isinstance(e, Price)]
+    assert [e.currency for e in prices] == ["KRYP"]
