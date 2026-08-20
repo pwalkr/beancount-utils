@@ -39,7 +39,6 @@ import beangulp
 from beangulp import mimetypes
 
 from beancount_utils.importers.fidelity_pdf import (
-    HOLDING_DATA_RE,
     MONTHS,
     PERIOD_RE,
     TICKER_RE,
@@ -53,6 +52,27 @@ from beancount_utils.importers.fidelity_pdf import (
 
 
 ACCOUNT_HEADER_RE = re.compile(r"Account # ([A-Z0-9]+-[A-Z0-9]+)")
+
+# Holdings rows surround the three columns we care about (quantity, price
+# per unit, ending market value) with a varying number of others: percent
+# of holdings, beginning market value, cost, gain/loss and EAI.  Match the
+# triple directly rather than counting columns from the left, and confirm
+# the alignment with quantity * price.
+HOLDING_TRIPLE_RE = re.compile(
+    r"([\d,]+\.\d{2,3})\s+\$?([\d,]+\.\d{2,5})\s+\$?([\d,]+\.\d{2})(?=\s|$)"
+)
+
+# Beginning market value, printed as "unavailable" for a position that was
+# opened during the statement period.
+BEGIN_VALUE_RE = re.compile(
+    r"\s+(?:\$?[\d,]+\.\d{2}|unavailable|not applicable)$", re.IGNORECASE
+)
+# Percent-of-holdings column.  It always carries a decimal point or a
+# percent sign, unlike a number that belongs to the security name
+# (e.g. "PROSHARES TRUST COINDESK 20").
+PERCENT_COL_RE = re.compile(r"\s+\d{1,3}(?:\.\d+%?|%)$")
+# Placeholder dashes for empty trailing columns.
+TRAILING_DASH_RE = re.compile(r"(?:\s+-+)+$")
 
 # Dividend row variants - column order differs between managed and
 # brokerage account layouts.
@@ -128,6 +148,31 @@ CASH_SECTIONS = {"core", "short_term"}
 PAYEE_FIDELITY = "Fidelity"
 
 
+def _clean_name(text: str) -> str:
+    """Strip the numeric columns that trail a description fragment."""
+    text = TRAILING_DASH_RE.sub("", text.strip())
+    text = BEGIN_VALUE_RE.sub("", text)
+    return PERCENT_COL_RE.sub("", text).strip()
+
+
+def _match_holding_row(line: str):
+    """Locate quantity / price / ending market value in a holdings row.
+
+    Several column alignments can match the pattern, so prefer the one
+    where quantity * price reproduces the ending market value; fall back
+    to the leftmost match when none does.
+    """
+    first = None
+    for m in HOLDING_TRIPLE_RE.finditer(line):
+        if first is None:
+            first = m
+        qty, price, ending = (to_decimal(g) for g in m.groups())
+        tolerance = max(Decimal("0.05"), ending * Decimal("0.001"))
+        if abs(qty * price - ending) <= tolerance:
+            return m
+    return first
+
+
 def parse_summary(lines: list[str]) -> dict:
     """Pull period-level Change in Investment Value + Ending Account Value."""
     out: dict = {}
@@ -174,14 +219,12 @@ def parse_holdings(lines: list[str]) -> dict[str, dict]:
             i += 1
             continue
 
-        m = HOLDING_DATA_RE.search(line)
+        m = _match_holding_row(line)
         if not m:
             i += 1
             continue
 
-        name = line[: m.start()].strip()
-        # Drop trailing percent-of-holdings column (e.g. "44.54%" or "20.72")
-        name = re.sub(r"\s+\d{1,3}(?:\.\d+)?%?$", "", name)
+        name = _clean_name(line[: m.start()])
         if not name or name.startswith("$"):
             i += 1
             continue
@@ -200,18 +243,17 @@ def parse_holdings(lines: list[str]) -> dict[str, dict]:
                 tm2 = TICKER_RE.search(nxt)
                 if tm2:
                     ticker = tm2.group(1)
-                    extra = nxt.split("(")[0].strip()
-                    extra = re.sub(r"\s+\d{1,3}(?:\.\d+)?%?$", "", extra)
+                    extra = _clean_name(nxt.split("(")[0])
                     if extra:
                         name = f"{name} {extra}".strip()
                     break
                 # Pure description wrap (no ticker yet).
-                cleaned = re.sub(r"\s+\d{1,3}(?:\.\d+)?%?$", "", nxt)
+                cleaned = _clean_name(nxt)
                 if cleaned and cleaned == cleaned.upper() and not cleaned[0].isdigit():
                     name = f"{name} {cleaned}".strip()
 
         if ticker:
-            begin_mv, qty, price, ending_mv = m.groups()
+            qty, price, ending_mv = m.groups()
             holdings[ticker] = {
                 "name": name,
                 "quantity": to_decimal(qty),
@@ -664,7 +706,8 @@ class Importer(beangulp.Importer):
                 postings=[
                     Posting(
                         self.cash_account(acct_id),
-                        Amount(rv["amount"], self.currency),
+                        # Row amount is the magnitude; the buy debits cash.
+                        Amount(-rv["amount"], self.currency),
                         None, None, None, None,
                     ),
                     Posting(
