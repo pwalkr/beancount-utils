@@ -2,7 +2,9 @@
 from datetime import date
 from decimal import Decimal
 
-from beancount.core.data import Amount, Price
+from beancount.core.data import Amount, Price, Transaction
+
+from beancount_utils.importers.fidelity_pdf import resolve_ticker
 
 from beancount_utils.importers import fidelity_managed_pdf as mod
 
@@ -123,3 +125,112 @@ def test_cash_fund_is_not_priced(monkeypatch):
     )
     prices = [e for e in entries if isinstance(e, Price)]
     assert [e.currency for e in prices] == ["KRYP"]
+
+
+# The Holdings and Activity tables abbreviate names differently, and not
+# in the same direction: "PROSHARES TR COIN 20 CRYP ETF" (Holdings),
+# "PROSHARES TRUST COINDESK 20 CRYPTO ETF" (Dividends) and "PROSHARES
+# TRUST COINDESK 20" (Securities Bought & Sold).
+ABBREVIATED_STATEMENT = """\
+INVESTMENT REPORT
+May 1, 2026 - May 31, 2026
+Account # 123-654987
+Holdings
+Stocks
+Common Stock
+ADVANCED MICRO DEVICES INC (AMD) 2,481.43 5.000 516.1000 2,580.50 918.00 1,662.50 -
+-
+PROSHARES TR COIN 20 CRYP ETF 610.26 67.000 20.8195 1,394.90 1,483.06 -88.16 -
+(KRYP) -
+Total Common Stock (100% of account $15,417.03 $17,410.30 $12,722.95 $4,687.35 $35.75
+Activity
+Securities Bought & Sold
+05/11 ADVANCED MICRO DEVICES INC 007903107 You Sold -2.000 $440.75000 $330.73 -$0.02 $881.48
+Transaction Profit: $550.75
+05/11 PROSHARES TRUST COINDESK 20 74350P683 You Bought 39.000 22.64000 - -882.96
+CRYPTO
+ETF
+Total Securities Bought - - -$882.96
+Dividends, Interest & Other Income
+05/07 PROSHARES TRUST COINDESK 20 74350P683 Dividend Received - - $0.15
+CRYPTO
+ETF
+Total Dividends, Interest & Other Income $0.15
+"""
+
+# Managed layout with a Cost Basis column: only the first row of each
+# security block names it, the rest carry just a date and a CUSIP.
+SECURITY_BLOCK_STATEMENT = """\
+INVESTMENT REPORT
+May 1, 2026 - May 31, 2026
+Account # 123-45689
+Holdings
+Stock Funds
+FIDELITY FLEX 500 INDEX 37.89% $18,543.39 579.154 $32.2600 $18,683.51 $11,479.65 $7,203.86 $192.86
+FUND (FDFIX) 1.030%
+Bond Funds
+FIDELITY FLEX CONS 4.48% $2,088.92 220.506 $10.0300 $2,211.68 $2,205.08 $6.60 $96.15
+INCOME BOND FUND (FJTDX) 4.350%
+Activity
+FIDELITY FLEX 500 INDEX FUND 05/28 315911685 You Sold -26.839 $31.97000 $787.73 $858.04
+Short-term gain: $70.31
+refer to confirm for Lot detail
+FIDELITY FLEX CONS INCOME BOND 05/28 31635T500 You Bought 11.515 $10.03000 - -$115.50
+FUND
+05/29 31635T500 Dividend Received - - - 7.26
+05/29 31635T500 Reinvestment 0.724 10.03000 - -7.26
+"""
+
+
+def narrations(entries):
+    return [e.narration for e in entries if isinstance(e, Transaction)]
+
+
+def test_abbreviated_holdings_name_resolves_dividend_ticker(monkeypatch):
+    entries = extract(
+        monkeypatch, ABBREVIATED_STATEMENT,
+        "123-654987", "Assets:US:Fidelity:RothIRA",
+    )
+    assert "Dividend - KRYP" in narrations(entries)
+
+
+def test_abbreviated_holdings_name_resolves_trade_ticker(monkeypatch):
+    entries = extract(
+        monkeypatch, ABBREVIATED_STATEMENT,
+        "123-654987", "Assets:US:Fidelity:RothIRA",
+    )
+    assert "Buy KRYP" in narrations(entries)
+
+
+def test_transaction_cost_column_is_ignored(monkeypatch):
+    entries = extract(
+        monkeypatch, ABBREVIATED_STATEMENT,
+        "123-654987", "Assets:US:Fidelity:RothIRA",
+    )
+    sell = next(e for e in entries if getattr(e, "narration", "") == "Sell AMD")
+    assert sell.postings[0].units.number == Decimal("881.48")
+    assert sell.postings[1].units.number == Decimal("-2.000")
+
+
+def test_rows_without_a_name_use_their_security_block(monkeypatch):
+    entries = extract(
+        monkeypatch, SECURITY_BLOCK_STATEMENT,
+        "123-45689", "Assets:US:Fidelity:HSA",
+    )
+    assert set(narrations(entries)) == {
+        "Sell FDFIX", "Buy FJTDX", "Dividend - FJTDX", "Reinvest FJTDX",
+    }
+    reinvest = next(
+        e for e in entries if getattr(e, "narration", "") == "Reinvest FJTDX"
+    )
+    assert reinvest.postings[0].units.number == Decimal("-7.26")
+
+
+def test_abbreviation_must_be_unambiguous():
+    names = {
+        "PROSHARES TRUST COINDESK 20 CRYPTO ETF": "KRYP",
+        "PROSHARES TRUST COINDESK 20 FUTURES ETF": "KRYPF",
+    }
+    # Abbreviated down to the tokens the two holdings share.
+    assert resolve_ticker("PROSHARES TR COIN 20", names) is None
+    assert resolve_ticker("PROSHARES TR COIN 20 CRYP ETF", names) == "KRYP"

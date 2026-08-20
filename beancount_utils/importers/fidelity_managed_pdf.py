@@ -79,23 +79,32 @@ PERCENT_COL_RE = re.compile(r"\s+\d{1,3}(?:\.\d+%?|%)$")
 # Placeholder dashes for empty trailing columns.
 TRAILING_DASH_RE = re.compile(r"(?:\s+-+)+$")
 
+# Security name as printed in the Activity tables.
+NAME = r"[A-Z][A-Z0-9&.()'\-/ ]+?"
+# A Cost / Cost Basis / Transaction Cost column, "-" when not applicable.
+# Only some layouts have them, and a charge is printed as "-$0.02".
+COST_COL = r"(?:-|-?\$?-?[\d,]+\.\d+)"
+
 # Dividend row variants - column order differs between managed and
-# brokerage account layouts.
+# brokerage account layouts, and rows after the first in a managed
+# security block carry no name.
+DIVIDEND = r"Dividend Received\s+-\s+-(?:\s+-)?\s+\$?([\d,]+\.\d{2})$"
 DIVIDEND_RE_NAME_FIRST = re.compile(
-    r"^([A-Z][A-Z0-9&.()'\-/ ]+?)\s+"
-    r"(\d{2}/\d{2})\s+([\dA-Z]{9})\s+"
-    r"Dividend Received\s+-\s+-\s+\$?([\d,]+\.\d{2})$"
+    rf"^({NAME})\s+(\d{{2}}/\d{{2}})\s+([\dA-Z]{{9}})\s+{DIVIDEND}"
 )
 DIVIDEND_RE_DATE_FIRST = re.compile(
-    r"^(\d{2}/\d{2})\s+([A-Z][A-Z0-9&.()'\-/ ]+?)\s+"
-    r"([\dA-Z]{9})\s+Dividend Received\s+-\s+-\s+\$?([\d,]+\.\d{2})$"
+    rf"^(\d{{2}}/\d{{2}})\s+({NAME})\s+([\dA-Z]{{9}})\s+{DIVIDEND}"
+)
+DIVIDEND_RE_NO_NAME = re.compile(
+    rf"^(\d{{2}}/\d{{2}})\s+([\dA-Z]{{9}})\s+{DIVIDEND}"
 )
 
 # Reinvestment row (auto-buy of dividend proceeds back into the same fund):
-#   "MM/DD CUSIP Reinvestment qty price -amount"
+#   "MM/DD CUSIP Reinvestment qty price [cost] -amount"
 REINVEST_RE = re.compile(
     r"^(\d{2}/\d{2})\s+([\dA-Z]{9})\s+"
     r"Reinvestment\s+([\d,]+\.\d+)\s+\$?([\d,]+\.\d+)\s+"
+    rf"(?:{COST_COL}\s+)?"
     r"-?\$?(-?[\d,]+\.\d{2})$"
 )
 
@@ -104,21 +113,23 @@ REINVEST_RE = re.compile(
 #   "MM/DD <name> <cusip> You Bought/Sold <qty> <price> <cost> <cost> <amount>"
 # Either cost column may be "-" when not applicable.  Quantity is negative
 # for sells, amount is negative for buys; both are captured as magnitudes.
-TRADE_RE_DATE_FIRST = re.compile(
-    r"^(\d{2}/\d{2})\s+([A-Z][A-Z0-9&.()'\-/ ]+?)\s+([\dA-Z]{9})\s+"
+TRADE = (
     r"You\s+(Bought|Sold)\s+"
     r"-?([\d,]+\.\d+)\s+\$?([\d,]+\.\d+)"
-    r"(?:\s+(?:-|\$?-?[\d,]+\.\d+)){1,2}\s+"
+    rf"(?:\s+{COST_COL}){{0,2}}\s+"
     r"-?\$?([\d,]+\.\d{2})$"
 )
-# Managed layout (per-security activity rows) puts the name first and has
-# no cost columns:
-#   "<name> MM/DD <cusip> You Bought <qty> <price> -<amount>"
+TRADE_RE_DATE_FIRST = re.compile(
+    rf"^(\d{{2}}/\d{{2}})\s+({NAME})\s+([\dA-Z]{{9}})\s+{TRADE}"
+)
+# Managed layout (per-security activity rows) puts the name first, and
+# only on the first row of each security block:
+#   "<name> MM/DD <cusip> You Bought <qty> <price> [<cost>] -<amount>"
 TRADE_RE_NAME_FIRST = re.compile(
-    r"^([A-Z][A-Z0-9&.()'\-/ ]+?)\s+(\d{2}/\d{2})\s+([\dA-Z]{9})\s+"
-    r"You\s+(Bought|Sold)\s+"
-    r"-?([\d,]+\.\d+)\s+\$?([\d,]+\.\d+)\s+"
-    r"-?\$?([\d,]+\.\d{2})$"
+    rf"^({NAME})\s+(\d{{2}}/\d{{2}})\s+([\dA-Z]{{9}})\s+{TRADE}"
+)
+TRADE_RE_NO_NAME = re.compile(
+    rf"^(\d{{2}}/\d{{2}})\s+([\dA-Z]{{9}})\s+{TRADE}"
 )
 
 # Contribution row: "MM/DD <description> <reference> $amount"
@@ -272,6 +283,7 @@ def parse_holdings(lines: list[str]) -> dict[str, dict]:
 
 
 def _match_dividend(stripped: str):
+    """Return (name | None, mm_dd, cusip, amount) for a dividend row."""
     m = DIVIDEND_RE_NAME_FIRST.match(stripped)
     if m:
         name, mm_dd, cusip, amount = m.groups()
@@ -280,6 +292,23 @@ def _match_dividend(stripped: str):
     if m:
         mm_dd, name, cusip, amount = m.groups()
         return name, mm_dd, cusip, amount
+    m = DIVIDEND_RE_NO_NAME.match(stripped)
+    if m:
+        mm_dd, cusip, amount = m.groups()
+        return None, mm_dd, cusip, amount
+    return None
+
+
+def _match_trade(stripped: str):
+    """Return (name | None, mm_dd, cusip, side, qty, price, amount)."""
+    m = TRADE_RE_NAME_FIRST.match(stripped)
+    if m:
+        name, mm_dd, cusip, side, qty, price, amount = m.groups()
+        return name, mm_dd, cusip, side, qty, price, amount
+    m = TRADE_RE_NO_NAME.match(stripped)
+    if m:
+        mm_dd, cusip, side, qty, price, amount = m.groups()
+        return None, mm_dd, cusip, side, qty, price, amount
     return None
 
 
@@ -302,7 +331,13 @@ def parse_activity(
         "taxes": [],
     }
     section = None  # 'div' | 'contrib' | 'fees' | 'trades' | 'taxes' | 'skip' | None
-    pending_div = None  # last dividend dict for name-wrap continuation
+    pending_div = None  # last row dict, for name-wrap continuation
+    # In the managed layout only the first row of a security block names
+    # it; the rows below carry just a date and a CUSIP.
+    pending_security = None
+
+    def security_name() -> str:
+        return pending_security["name"] if pending_security else ""
 
     def to_d(month, day):
         m, d = int(month), int(day)
@@ -316,23 +351,23 @@ def parse_activity(
         # Section transitions
         if "Core Fund Activity" in s:
             section = "skip"
-            pending_div = None
+            pending_div = pending_security = None
             continue
         if s.startswith("Realized Gains") or s.startswith("Estimated Cash Flow"):
             section = "skip"
-            pending_div = None
+            pending_div = pending_security = None
             continue
         if s.startswith("Additional Information") or ACCOUNT_HEADER_RE.search(s):
             section = None
-            pending_div = None
+            pending_div = pending_security = None
             continue
         if "Dividends, Interest" in s and not s.startswith("Total"):
             section = "div"
-            pending_div = None
+            pending_div = pending_security = None
             continue
         if s.startswith("Securities Bought"):
             section = "trades"
-            pending_div = None
+            pending_div = pending_security = None
             continue
         if s.startswith("Net Securities") or s.startswith("Transaction Profit") \
                 or s.startswith("Transaction Loss"):
@@ -341,22 +376,22 @@ def parse_activity(
         if s == "Activity":
             # Default to dividend section if no explicit header follows.
             section = "div"
-            pending_div = None
+            pending_div = pending_security = None
             continue
         if s == "Contributions" or s == "Distributions":
             section = "contrib"
-            pending_div = None
+            pending_div = pending_security = None
             continue
         if s.startswith("Fees and Charges"):
             section = "fees"
-            pending_div = None
+            pending_div = pending_security = None
             continue
         if s.startswith("Taxes Withheld"):
             section = "taxes"
-            pending_div = None
+            pending_div = pending_security = None
             continue
         if s.startswith("Total "):
-            pending_div = None
+            pending_div = pending_security = None
             # Don't change section; another subsection header may follow.
             continue
 
@@ -370,28 +405,35 @@ def parse_activity(
                 month, day = mm_dd.split("/")
                 entry = {
                     "date": to_d(month, day),
-                    "name": name.strip(),
+                    "name": name.strip() if name else security_name(),
                     "cusip": cusip,
                     "amount": to_decimal(amount),
                 }
                 out["dividends"].append(entry)
-                pending_div = entry
+                if name:
+                    pending_div = pending_security = entry
+                else:
+                    pending_div = None
                 continue
 
-            tm = TRADE_RE_NAME_FIRST.match(s)
+            tm = _match_trade(s)
             if tm:
-                name, mm_dd, cusip, side, qty, price, amount = tm.groups()
+                name, mm_dd, cusip, side, qty, price, amount = tm
                 month, day = mm_dd.split("/")
-                out["trades"].append({
+                entry = {
                     "date": to_d(month, day),
-                    "name": name.strip(),
+                    "name": name.strip() if name else security_name(),
                     "cusip": cusip,
                     "side": side,
                     "quantity": to_decimal(qty),
                     "price": to_decimal(price),
                     "amount": to_decimal(amount),
-                })
-                pending_div = None
+                }
+                out["trades"].append(entry)
+                if name:
+                    pending_div = pending_security = entry
+                else:
+                    pending_div = None
                 continue
 
             rm = REINVEST_RE.match(s)
@@ -408,7 +450,7 @@ def parse_activity(
                 pending_div = None
                 continue
 
-            # Name-wrap continuation for the previous dividend (e.g.
+            # Name-wrap continuation for the previous row (e.g.
             # "FUND" or "MARKET" on its own line, possibly across
             # multiple lines).
             if (
@@ -419,7 +461,7 @@ def parse_activity(
             ):
                 pending_div["name"] = f"{pending_div['name']} {s}".strip()
                 continue
-            pending_div = None
+            pending_div = pending_security = None
             continue
 
         if section == "contrib":

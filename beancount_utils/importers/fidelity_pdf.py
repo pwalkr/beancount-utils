@@ -305,12 +305,39 @@ def parse_transfers(pages: list[str], start: date, end: date) -> list[dict]:
     return out
 
 
+def name_tokens(name: str) -> list[str]:
+    return [t for t in re.split(r"[^A-Z0-9]+", name.upper()) if t]
+
+
+def tokens_match(a: list[str], b: list[str]) -> bool:
+    """True when two names agree token by token, allowing truncation.
+
+    Fidelity abbreviates security names differently in each table, and
+    not always in the same direction, e.g. "PROSHARES TR COIN 20 CRYP
+    ETF" (Holdings) against "PROSHARES TRUST COINDESK 20 CRYPTO ETF"
+    (Dividends) and "PROSHARES TRUST COINDESK 20" (Securities Bought &
+    Sold).  Compare only the tokens the two names have in common.
+    """
+    if min(len(a), len(b)) < 2:
+        return False
+    return all(x.startswith(y) or y.startswith(x) for x, y in zip(a, b))
+
+
 def resolve_ticker(div_name: str, name_to_ticker: dict[str, str]) -> str | None:
     if div_name in name_to_ticker:
         return name_to_ticker[div_name]
     for n, t in name_to_ticker.items():
         if div_name.startswith(n) or n.startswith(div_name):
             return t
+    # Fall back to a token-wise match, which tolerates the abbreviations
+    # the two tables disagree on.  Only accept an unambiguous hit.
+    div_tokens = name_tokens(div_name)
+    matches = {
+        t for n, t in name_to_ticker.items()
+        if tokens_match(name_tokens(n), div_tokens)
+    }
+    if len(matches) == 1:
+        return matches.pop()
     return None
 
 
