@@ -1,7 +1,7 @@
 import datetime
 import json
 
-from decimal import Decimal
+from decimal import Context, Decimal
 
 import beangulp
 
@@ -143,8 +143,9 @@ class Importer(beangulp.Importer):
             if ledger['asset'] == 'KFEE' and amount < 0.01:
                 continue
             cost = extract_cost(ledger, group, self.base_currency)
+            price = extract_price(ledger, group, self.base_currency)
             amount = Amount(amount, ledger['asset'])
-            postings.append(Posting(asset_account, amount, cost, None, None, None))
+            postings.append(Posting(asset_account, amount, cost, price, None, None))
         return postings
 
     def deduplicate(self, entries, existing):
@@ -204,6 +205,24 @@ def extract_cost(ledger, group, base_currency):
             else:
                 cost = CostSpec(None, None, None, None, None, None)
     return cost
+
+def extract_price(ledger, group, base_currency):
+    """Per-unit sale price, so reductions carry an `@ price` annotation."""
+    if ledger['asset'] == base_currency:
+        return None
+    units = Decimal(ledger['amount'])
+    if units >= 0:
+        return None
+    for entry in group:
+        if entry['asset'] == base_currency:
+            proceeds = Decimal(entry['amount'])
+            if proceeds > 0:
+                # Round to 8 significant digits, avoiding exponent notation (8E+4)
+                price = Context(prec=8).plus(proceeds / -units)
+                if price.as_tuple().exponent > 0:
+                    price = price.quantize(Decimal(1))
+                return Amount(price, base_currency)
+    return None
 
 def is_sale(group, base_currency):
     for ledger in group:
