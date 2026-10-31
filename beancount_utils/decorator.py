@@ -13,36 +13,48 @@ default_scope = 'default'
 
 
 class Decorator:
-    def __init__(self, decorations, exclude=None):
+    def __init__(self, decorations, exclude=None, history=False, history_flag=None):
+        """
+        Args:
+          decorations: Decoration rules, tried in order; the first match wins.
+          exclude: Predicate for transactions to leave untouched.
+          history: When no rule matches a transaction that has only its
+            imported posting, copy the other account of the most recent
+            two-posting entry in existing with the same normalized payee on
+            the same account. Needs existing passed to decorate().
+          history_flag: Flag to set on transactions categorized from history.
+        """
         self.decorations = decorations
         self.exclude = (lambda x: False) if exclude is None else exclude
+        self.history = history
+        self.history_flag = history_flag
 
     @classmethod
-    def from_yaml(cls, filepath, scope=None):
-        return cls.from_config(load_yaml(filepath), scope)
+    def from_yaml(cls, filepath, scope=None, **kwargs):
+        return cls.from_config(load_yaml(filepath), scope, **kwargs)
 
     @classmethod
-    def from_config(cls, decorations, scope=None):
+    def from_config(cls, decorations, scope=None, **kwargs):
         """Build from a parsed config: a list, or a dict of scoped lists."""
         if decorations is None:
             # Empty YAML document
-            return cls([])
+            return cls([], **kwargs)
         elif isinstance(decorations, dict):
-            return cls.from_dict(decorations, scope)
+            return cls.from_dict(decorations, scope, **kwargs)
         elif isinstance(decorations, list):
             if scope is not None:
                 raise ValueError("Scope is not applicable for list of decorations.")
-            return cls.from_list(decorations)
+            return cls.from_list(decorations, **kwargs)
         raise ValueError("Decorations must be a list or a dictionary.")
 
     @classmethod
-    def from_list(cls, decorations):
+    def from_list(cls, decorations, **kwargs):
         if not isinstance(decorations, list):
             raise ValueError("Decorations must be a list.")
-        return cls([d if isinstance(d, Decoration) else Decoration(d) for d in decorations])
+        return cls([d if isinstance(d, Decoration) else Decoration(d) for d in decorations], **kwargs)
 
     @classmethod
-    def from_dict(cls, decorations, scope=None):
+    def from_dict(cls, decorations, scope=None, **kwargs):
         if not isinstance(decorations, dict):
             raise ValueError("Decorations must be a dictionary.")
         if scope and scope not in decorations:
@@ -50,7 +62,7 @@ class Decorator:
         # An empty YAML section parses as None
         scoped = decorations.get(scope) or []
         default = decorations.get(default_scope) or []
-        return cls([Decoration(decoration) for decoration in (scoped + default)])
+        return cls([Decoration(decoration) for decoration in (scoped + default)], **kwargs)
 
     def append_yaml(self, filepath, scope=None):
         self.decorations = self.decorations + self.from_yaml(filepath, scope).decorations
@@ -58,16 +70,57 @@ class Decorator:
     def append_list(self, decorations):
         self.decorations = self.decorations + self.from_list(decorations).decorations
 
-    def decorate(self, entries):
+    def decorate(self, entries, existing=None):
+        history = build_history(existing) if self.history and existing else None
         for idx, entry in enumerate(entries):
             if isinstance(entry, Transaction) and not self.exclude(entry):
-                entries[idx] = self.decorate_transaction(entry)
+                entries[idx] = self.decorate_transaction(entry, history)
 
-    def decorate_transaction(self, transaction):
+    def decorate_transaction(self, transaction, history=None):
         for decoration in self.decorations:
             if decoration.match(transaction):
                 return decoration.decorate(transaction)
+        if history:
+            return self.decorate_from_history(transaction, history)
         return transaction
+
+    def decorate_from_history(self, transaction, history):
+        if len(transaction.postings) != 1 or transaction.postings[0].units is None:
+            return transaction
+        posting = transaction.postings[0]
+        account = history.get((normalize_payee(transaction.payee), posting.account))
+        if account is None:
+            return transaction
+        transaction.postings.append(Posting(account, -posting.units, None, None, None, None))
+        if self.history_flag:
+            transaction = transaction._replace(flag=self.history_flag)
+        return transaction
+
+
+def normalize_payee(payee):
+    """Lowercase words of payee, dropping any containing digits (store and reference numbers)."""
+    if not payee:
+        return ''
+    words = re.findall(r'[a-z0-9]+', payee.lower())
+    return ' '.join(w for w in words if not any(c.isdigit() for c in w))
+
+
+def build_history(existing):
+    """Map (normalized payee, account) to the other account of the latest two-posting entry."""
+    latest = {}
+    for entry in existing:
+        if not isinstance(entry, Transaction) or len(entry.postings) != 2:
+            continue
+        payee = normalize_payee(entry.payee)
+        first, second = entry.postings
+        if not payee or first.account == second.account:
+            continue
+        for this, other in ((first, second), (second, first)):
+            key = (payee, this.account)
+            # Later entries in file order win ties on date
+            if key not in latest or entry.date >= latest[key][0]:
+                latest[key] = (entry.date, other.account)
+    return {key: account for key, (date, account) in latest.items()}
 
 
 def compile_optional(pattern):

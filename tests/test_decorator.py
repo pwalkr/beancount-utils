@@ -4,6 +4,7 @@ Modern pytest style: plain functions, bare ``assert``, fixtures and
 parametrization rather than ``unittest.TestCase`` boilerplate.
 """
 
+import datetime
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -11,7 +12,7 @@ import pytest
 
 from beancount.core.data import Amount, Posting, Transaction
 
-from beancount_utils.decorator import Decorator, Decoration
+from beancount_utils.decorator import Decorator, Decoration, normalize_payee
 
 
 def make_transaction(*, payee="Foo Bar", flag="!", narration="Old", tags=("old",), postings=None):
@@ -225,6 +226,74 @@ def test_from_yaml_empty_sections(tmp_path):
 def test_from_config_invalid_type():
     with pytest.raises(ValueError):
         Decorator.from_config("not a list")
+
+
+# --- history ----------------------------------------------------------------
+
+
+CARD = "Liabilities:Card"
+
+
+def card_txn(payee, number="-5.00", day=1, category=None, account=CARD):
+    postings = [Posting(account, Amount(Decimal(number), "USD"), None, None, None, None)]
+    if category:
+        postings.append(Posting(category, Amount(-Decimal(number), "USD"), None, None, None, None))
+    return Transaction({}, datetime.date(2026, 10, day), "*", payee, "", frozenset(), frozenset(), postings)
+
+
+@pytest.fixture
+def ledger():
+    return [
+        card_txn("SQ *BLUE BOTTLE 0423", day=1, category="Expenses:Coffee"),
+        card_txn("SQ *BLUE BOTTLE 0611", day=9, category="Expenses:Eating-Out"),
+        card_txn("SQ *BLUE BOTTLE 0423", day=5, category="Expenses:Coffee"),
+        card_txn("Hardware Store", day=3, category="Expenses:Home", account="Liabilities:Other"),
+    ]
+
+
+def test_history_uses_most_recent_entry(ledger):
+    entries = [card_txn("SQ *Blue Bottle #9999", day=20)]
+    Decorator([], history=True, history_flag="!").decorate(entries, ledger)
+    assert [p.account for p in entries[0].postings] == [CARD, "Expenses:Eating-Out"]
+    assert entries[0].postings[1].units == Amount(Decimal("5.00"), "USD")
+    assert entries[0].flag == "!"
+
+
+@pytest.mark.parametrize(
+    "decorator, entry",
+    [
+        pytest.param(Decorator([]), card_txn("SQ *BLUE BOTTLE"), id="disabled"),
+        pytest.param(Decorator([], history=True), card_txn("Unknown Shop"), id="unknown-payee"),
+        pytest.param(Decorator([], history=True), card_txn("Hardware Store"), id="other-account-only"),
+        pytest.param(Decorator([], history=True), card_txn("SQ *BLUE BOTTLE", category="Expenses:Gifts"),
+                     id="already-categorized"),
+    ],
+)
+def test_history_leaves_entry(decorator, entry, ledger):
+    postings = list(entry.postings)
+    entries = [entry]
+    decorator.decorate(entries, ledger)
+    assert entries[0].postings == postings
+
+
+def test_rules_take_precedence_over_history(ledger):
+    entries = [card_txn("SQ *BLUE BOTTLE")]
+    rule = Decoration({"re": "blue bottle", "target_account": "Expenses:Rule"})
+    Decorator([rule], history=True).decorate(entries, ledger)
+    assert [p.account for p in entries[0].postings] == [CARD, "Expenses:Rule"]
+
+
+@pytest.mark.parametrize(
+    "payee, normalized",
+    [
+        ("SQ *BLUE BOTTLE 0423", "sq blue bottle"),
+        ("AMAZON MKTPL*AB12CD", "amazon mktpl"),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_normalize_payee(payee, normalized):
+    assert normalize_payee(payee) == normalized
 
 
 # --- Decorator.append_* ---------------------------------------------------
