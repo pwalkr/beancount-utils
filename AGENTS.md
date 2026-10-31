@@ -28,3 +28,16 @@ pytest -q                           # quiet output
 - Write tests in modern pytest style: plain functions, bare `assert`,
   fixtures, and `@pytest.mark.parametrize` — not `unittest.TestCase`.
 - Keep new tests under `tests/`.
+
+## Commits
+
+- Use [Conventional Commits](https://www.conventionalcommits.org/):
+  `type(scope): summary`, e.g. `feat(kraken): output price for sales`.
+  Common types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`.
+- The scope is the module or importer touched: `deduplicate`, `decorator`,
+  `singlefin`, `kraken`, `fidelity-pdf`, `merrill-pdf`, …
+- Split independent changes into separate commits. A shared helper and the
+  importer that starts using it are separate commits, helper first.
+- Commit updates to this file separately as `docs(agents): …`.
+- Only stage files you changed. Untracked files such as `dump.txt` (raw
+  statement text with personal data) must never be committed.
