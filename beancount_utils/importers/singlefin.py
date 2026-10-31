@@ -67,4 +67,4 @@ class Importer(importer.Importer):
         if self.decorate:
             self.decorate(entries)
         if self.decorator:
-            self.decorator.decorate(entries)
+            self.decorator.decorate(entries, existing)

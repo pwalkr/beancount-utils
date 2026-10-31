@@ -9,6 +9,7 @@ import pytest
 from beancount.core.data import Amount, Posting, Transaction
 from beangulp.extract import DUPLICATE
 
+from beancount_utils.decorator import Decorator
 from beancount_utils.importers.singlefin import ID_KEY, Importer
 
 ACCOUNT = "Liabilities:Card"
@@ -56,6 +57,15 @@ def test_deduplicate_matches_by_id(importer, export):
     importer.deduplicate(entries, existing)
     assert DUPLICATE not in entries[0].meta
     assert entries[1].meta[DUPLICATE] is existing[0]
+
+
+def test_deduplicate_decorates_from_history(export):
+    importer = Importer(ACCOUNT, ACCTID, decorator=Decorator([], history=True))
+    entries = importer.extract(export, [])
+    past = ledger_txn("-3.00", 1)
+    past.postings.append(Posting("Expenses:Coffee", Amount(Decimal("3.00"), "USD"), None, None, None, None))
+    importer.deduplicate(entries, [past])
+    assert [p.account for p in entries[1].postings] == [ACCOUNT, "Expenses:Coffee"]
 
 
 def test_deduplicate_falls_back_for_ledger_without_ids(importer, export):
