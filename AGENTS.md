@@ -42,6 +42,22 @@ pytest -q                           # quiet output
   that treats `existing` as ground truth (e.g. `extract_out_of_place`) sees
   earlier files' output too.
 
+## Decorator
+
+- `beancount_utils.decorator.Decorator` is the rule-based categorizer.
+  Rules come from YAML, either as a list or as a dict of scopes with a
+  `default` scope that applies after the selected one. The first matching
+  rule wins.
+- Matchers (all given must match, at least one required): `re` (payee),
+  `narration_re`, `account_re` (any posting), and `min_amount` /
+  `max_amount` (the first, imported posting). Regexes are case-insensitive
+  `search`.
+- `history=True` falls back to the most recent ledger entry with the same
+  normalized payee on the same account. It only fills transactions that
+  have just their imported posting, and needs `decorate(entries, existing)`.
+- Decorating duplicates and transactions that already have several
+  postings is intended; don't add guards against it.
+
 ## Commits
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/):
