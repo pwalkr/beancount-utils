@@ -4,18 +4,15 @@ from beancount.core import data
 from beangulp.extract import DUPLICATE
 
 
-def extract_out_of_place(existing, entries, account, window=datetime.timedelta(days=2)):
-    incoming_postings = wrap_postings(entries, account)
+def extract_out_of_place(existing, entries, account, window=datetime.timedelta(days=2), id_key=None):
+    incoming_postings = wrap_postings(entries, account, id_key)
     context = list(yield_context(existing, entries, account))
-    for posting in wrap_postings(context, account):
-        found = False
-        for candidate in incoming_postings:
-            if posting.match(candidate, window):
-                # Mark similar to beangulp.extract.mark_duplicate_entries
-                posting.entry.meta[DUPLICATE] = candidate.entry
-                found = True
-                break
-        if not found:
+    context_postings = wrap_postings(context, account, id_key)
+    for posting, candidate in match_postings(context_postings, incoming_postings, window):
+        # Mark similar to beangulp.extract.mark_duplicate_entries
+        posting.entry.meta[DUPLICATE] = candidate.entry
+    for posting in context_postings:
+        if posting._match is None:
             # Update flag. Can't update tuple so replace based on index
             for x, p in enumerate(posting.entry.postings):
                 if p is posting.posting:
@@ -75,9 +72,14 @@ def yield_context(existing, entries, account):
                     break
 
 
-def mark_duplicate_entries(entries, context, account, window=datetime.timedelta(days=2)):
+def mark_duplicate_entries(entries, context, account, window=datetime.timedelta(days=2), id_key=None):
+    """Mark duplicate entries.
+
+    When id_key is given, postings whose meta both carry that key match
+    only on equal ids; postings missing it fall back to amount and date.
+    """
     mark_duplicate_open_close(entries, context)
-    mark_duplicate_postings(entries, context, account, window)
+    mark_duplicate_postings(entries, context, account, window, id_key)
     mark_duplicate_prices(entries, context)
 
 
@@ -91,18 +93,32 @@ def mark_duplicate_open_close(entries, context):
                     break
 
 
-def mark_duplicate_postings(entries, context, account, window=datetime.timedelta(days=2)):
-    context_postings = wrap_postings(context, account)
-    for posting in wrap_postings(entries, account):
-        for candidate in context_postings:
-            if posting.match(candidate, window):
-                # Mark similar to beangulp.extract.mark_duplicate_entries
-                posting.entry.meta[DUPLICATE] = candidate.entry
-                # Update flag. Can't update tuple so replace based on index
-                for x, p in enumerate(posting.entry.postings):
-                    if p is posting.posting:
-                        posting.entry.postings[x] = posting.posting._replace(flag='!')
-                break
+def mark_duplicate_postings(entries, context, account, window=datetime.timedelta(days=2), id_key=None):
+    postings = wrap_postings(entries, account, id_key)
+    context_postings = wrap_postings(context, account, id_key)
+    for posting, candidate in match_postings(postings, context_postings, window):
+        # Mark similar to beangulp.extract.mark_duplicate_entries
+        posting.entry.meta[DUPLICATE] = candidate.entry
+        # Update flag. Can't update tuple so replace based on index
+        for x, p in enumerate(posting.entry.postings):
+            if p is posting.posting:
+                posting.entry.postings[x] = posting.posting._replace(flag='!')
+
+
+def match_postings(postings, candidates, window):
+    """Pair postings one-to-one, taking exact id matches before fuzzy ones.
+
+    The exact pass runs over every posting before any fuzzy matching, so an
+    id-less posting earlier in either list cannot claim, by amount, the
+    counterpart of a later posting with a matching id. A posting is yielded
+    at most once: match() refuses postings already claimed.
+    """
+    for exact in (True, False):
+        for posting in postings:
+            for candidate in candidates:
+                if posting.match(candidate, window, exact):
+                    yield posting, candidate
+                    break
 
 
 def mark_duplicate_balances(entries, context, window=datetime.timedelta(days=2), tolerance=Decimal('0.0001')):
@@ -148,37 +164,51 @@ def clone_transaction(entry):
             postings)
 
 
-def wrap_postings(entries, account):
+def wrap_postings(entries, account, id_key=None):
     return [
-        PostingWrapper(posting, entry)
+        PostingWrapper(posting, entry, id_key)
         for entry in data.filter_txns(entries)
         for posting in entry.postings if posting.account.startswith(account)
     ]
 
 
 class PostingWrapper():
-    def __init__(self, posting, entry):
+    def __init__(self, posting, entry, id_key=None):
         self.posting = posting
         self.entry = entry
         self.date = entry.date
         self.account = posting.account
         self.amount = posting.units.number if posting.units is not None else None
         self.currency = posting.units.currency if posting.units is not None else None
+        self.id = posting.meta.get(id_key) if id_key and posting.meta else None
         self._match = None
 
-    def match(self, ip, window):
-        if self.amount is None or self.currency is None:
-            return False
+    def match(self, ip, window, exact=False):
+        """Claim ip if it matches.
 
+        With exact, only equal ids match. Otherwise ids must not both be
+        present (they would have decided already) and amount, currency and
+        date within window must agree.
+        """
         if self._match is not None or ip._match is not None:
             return False
 
-        if abs(self.date - ip.date) <= window:
-            if self.amount == ip.amount and self.currency == ip.currency:
-                # Match leaf accounts
-                if self.account.startswith(ip.account) or ip.account.startswith(self.account):
-                    self._match = ip
-                    ip._match = self
-                    return True
+        # Match leaf accounts
+        if not (self.account.startswith(ip.account) or ip.account.startswith(self.account)):
+            return False
 
-        return False
+        if exact:
+            matched = self.id is not None and self.id == ip.id
+        elif self.id is not None and ip.id is not None:
+            matched = False
+        elif self.amount is None or self.currency is None:
+            matched = False
+        else:
+            matched = (abs(self.date - ip.date) <= window
+                       and self.amount == ip.amount
+                       and self.currency == ip.currency)
+
+        if matched:
+            self._match = ip
+            ip._match = self
+        return matched
