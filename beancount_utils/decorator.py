@@ -23,12 +23,16 @@ class Decorator:
     @classmethod
     def from_config(cls, decorations, scope=None):
         """Build from a parsed config: a list, or a dict of scoped lists."""
-        if isinstance(decorations, dict):
+        if decorations is None:
+            # Empty YAML document
+            return cls([])
+        elif isinstance(decorations, dict):
             return cls.from_dict(decorations, scope)
         elif isinstance(decorations, list):
             if scope is not None:
                 raise ValueError("Scope is not applicable for list of decorations.")
             return cls.from_list(decorations)
+        raise ValueError("Decorations must be a list or a dictionary.")
 
     @classmethod
     def from_list(cls, decorations):
@@ -42,8 +46,9 @@ class Decorator:
             raise ValueError("Decorations must be a dictionary.")
         if scope and scope not in decorations:
             raise ValueError(f"Scope '{scope}' not found in decorations.")
-        scoped = decorations.get(scope, [])
-        default = decorations.get(default_scope, [])
+        # An empty YAML section parses as None
+        scoped = decorations.get(scope) or []
+        default = decorations.get(default_scope) or []
         return cls([Decoration(decoration) for decoration in (scoped + default)])
 
     def append_yaml(self, filepath, scope=None):

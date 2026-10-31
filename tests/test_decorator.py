@@ -168,6 +168,24 @@ def test_from_yaml_single_file():
     mock_from_list.assert_called_once_with([decoration])
 
 
+def test_from_yaml_empty_file(tmp_path):
+    path = tmp_path / "decorations.yaml"
+    path.write_text("")
+    assert Decorator.from_yaml(str(path)).decorations == []
+
+
+def test_from_yaml_empty_sections(tmp_path):
+    path = tmp_path / "decorations.yaml"
+    path.write_text("default:\nbank:\n  - re: bar\n    flag: '!'\n")
+    assert [d.flag for d in Decorator.from_yaml(str(path), scope="bank").decorations] == ["!"]
+    assert Decorator.from_yaml(str(path)).decorations == []
+
+
+def test_from_config_invalid_type():
+    with pytest.raises(ValueError):
+        Decorator.from_config("not a list")
+
+
 # --- Decorator.append_* ---------------------------------------------------
 
 
