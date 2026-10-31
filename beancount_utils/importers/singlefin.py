@@ -9,6 +9,9 @@ import re
 from beancount_utils.deduplicate import mark_duplicate_entries
 from beancount_utils.decorator import Decorator
 
+# Posting meta key holding the SimpleFIN transaction id
+ID_KEY = 'simplefin_id'
+
 
 class Importer(importer.Importer):
     def __init__(self, account, acctid, currency='USD', decorate=None, decorator: Decorator = None):
@@ -54,12 +57,12 @@ class Importer(importer.Importer):
             # Many of these have absurdly     long                 spaces
             narration = re.sub(' +', ' ', transaction['description'])
             amount = Amount(Decimal(transaction['amount']), self.currency)
-            postings = [Posting(account, amount, None, None, None, {'description':narration})]
+            postings = [Posting(account, amount, None, None, None, {'description': narration, ID_KEY: transaction['id']})]
             entries.append(Transaction(meta, date, flag, payee, narration, frozenset(), frozenset(), postings))
         return entries
 
     def deduplicate(self, entries, existing):
-        mark_duplicate_entries(entries, existing, self._account)
+        mark_duplicate_entries(entries, existing, self._account, id_key=ID_KEY)
         # Decorate after marking duplicates so extra target postings don't interfere
         if self.decorate:
             self.decorate(entries)
