@@ -81,6 +81,9 @@ class Decoration:
         self.narration = decoration.get('narration')
         self.payee = decoration.get('payee')
         self.tags = decoration.get('tags')
+        if isinstance(self.tags, str):
+            # A string would union as a set of characters
+            self.tags = [self.tags]
         self.source_account = decoration.get('source_account')
         self.target_account = decoration.get('target_account')
 

@@ -148,6 +148,12 @@ def test_decorate_updates_fields(tx):
     assert "old" in tx2.tags
 
 
+@pytest.mark.parametrize("tags", ["new", ["new"]], ids=["string", "list"])
+def test_decorate_tags(tags, tx):
+    tx2 = Decoration({"re": "foo", "tags": tags}).decorate(tx)
+    assert tx2.tags == {"old", "new"}
+
+
 def test_decorate_adds_posting(tx):
     d = Decoration({"re": "foo", "target_account": "Expenses:Test"})
     tx2 = d.decorate(tx)
