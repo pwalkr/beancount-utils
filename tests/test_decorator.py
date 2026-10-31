@@ -166,3 +166,27 @@ def test_from_yaml_single_file():
 
     mock_load_yaml.assert_called_once_with("decorations.yaml")
     mock_from_list.assert_called_once_with([decoration])
+
+
+# --- Decorator.append_* ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        pytest.param({"re": "foo", "flag": "*"}, id="dict"),
+        pytest.param(Decoration({"re": "foo", "flag": "*"}), id="decoration"),
+    ],
+)
+def test_append_list_decorates(extra, tx):
+    decorator = Decorator([])
+    decorator.append_list([extra])
+    assert decorator.decorate_transaction(tx).flag == "*"
+
+
+def test_append_yaml_with_scope(scoped_config):
+    decorator = Decorator([])
+    with patch("beancount_utils.decorator.load_yaml", return_value=scoped_config):
+        decorator.append_yaml("decorations.yaml", scope="card")
+    assert [d.flag for d in decorator.decorations] == ["#", "*"]
+    assert decorator.decorate_transaction(make_transaction(payee="baz")).flag == "#"

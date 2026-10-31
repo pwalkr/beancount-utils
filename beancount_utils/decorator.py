@@ -18,7 +18,11 @@ class Decorator:
 
     @classmethod
     def from_yaml(cls, filepath, scope=None):
-        decorations = load_yaml(filepath)
+        return cls.from_config(load_yaml(filepath), scope)
+
+    @classmethod
+    def from_config(cls, decorations, scope=None):
+        """Build from a parsed config: a list, or a dict of scoped lists."""
         if isinstance(decorations, dict):
             return cls.from_dict(decorations, scope)
         elif isinstance(decorations, list):
@@ -30,7 +34,7 @@ class Decorator:
     def from_list(cls, decorations):
         if not isinstance(decorations, list):
             raise ValueError("Decorations must be a list.")
-        return cls([Decoration(decoration) for decoration in decorations])
+        return cls([d if isinstance(d, Decoration) else Decoration(d) for d in decorations])
 
     @classmethod
     def from_dict(cls, decorations, scope=None):
@@ -42,11 +46,11 @@ class Decorator:
         default = decorations.get(default_scope, [])
         return cls([Decoration(decoration) for decoration in (scoped + default)])
 
-    def append_yaml(self, filepath):
-        self.append_list(load_yaml(filepath))
+    def append_yaml(self, filepath, scope=None):
+        self.decorations = self.decorations + self.from_yaml(filepath, scope).decorations
 
     def append_list(self, decorations):
-        self.decorations = self.decorations + decorations
+        self.decorations = self.decorations + self.from_list(decorations).decorations
 
     def decorate(self, entries):
         for idx, entry in enumerate(entries):
