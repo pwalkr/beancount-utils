@@ -29,6 +29,19 @@ pytest -q                           # quiet output
   fixtures, and `@pytest.mark.parametrize` — not `unittest.TestCase`.
 - Keep new tests under `tests/`.
 
+## Deduplication
+
+- Importers mark duplicates in `deduplicate(entries, existing)`, mostly via
+  `beancount_utils.deduplicate.mark_duplicate_entries`.
+- Pass `id_key` when the source provides stable transaction ids and the
+  importer stores them in posting meta (e.g. `singlefin` uses
+  `simplefin_id`). Equal ids decide a match outright; postings without the
+  key fall back to amount/date matching, so older ledger entries still dedupe.
+- beangulp's `extract` appends each file's entries to `existing` before
+  deduplicating the next file, so `existing` is not just the ledger. Code
+  that treats `existing` as ground truth (e.g. `extract_out_of_place`) sees
+  earlier files' output too.
+
 ## Commits
 
 - Use [Conventional Commits](https://www.conventionalcommits.org/):
