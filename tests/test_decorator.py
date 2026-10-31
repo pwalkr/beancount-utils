@@ -4,11 +4,12 @@ Modern pytest style: plain functions, bare ``assert``, fixtures and
 parametrization rather than ``unittest.TestCase`` boilerplate.
 """
 
+from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
 
-from beancount.core.data import Posting, Transaction
+from beancount.core.data import Amount, Posting, Transaction
 
 from beancount_utils.decorator import Decorator, Decoration
 
@@ -135,6 +136,40 @@ def test_match_false_no_payee():
 
 def test_match_false_no_match(tx):
     assert not Decoration({"re": "baz"}).match(tx)
+
+
+def test_requires_a_matcher():
+    with pytest.raises(ValueError):
+        Decoration({"flag": "*"})
+
+
+def venmo(number, narration="Payment to Sam", account="Assets:Venmo"):
+    posting = Posting(account, Amount(Decimal(number), "USD"), None, None, None, None)
+    return make_transaction(payee="Venmo", narration=narration, postings=[posting])
+
+
+@pytest.mark.parametrize(
+    "config, matched",
+    [
+        pytest.param({"narration_re": "sam"}, True, id="narration"),
+        pytest.param({"narration_re": "alex"}, False, id="narration-miss"),
+        pytest.param({"account_re": "^Assets:Venmo$"}, True, id="account"),
+        pytest.param({"account_re": "Card"}, False, id="account-miss"),
+        pytest.param({"min_amount": -1200, "max_amount": -1200}, True, id="exact-amount"),
+        pytest.param({"min_amount": "-1300", "max_amount": "-1100.50"}, True, id="amount-range"),
+        pytest.param({"max_amount": -1300}, False, id="above-max"),
+        pytest.param({"min_amount": 0}, False, id="below-min"),
+        pytest.param({"re": "venmo", "narration_re": "sam", "max_amount": 0}, True, id="all-match"),
+        pytest.param({"re": "venmo", "narration_re": "alex", "max_amount": 0}, False, id="one-misses"),
+    ],
+)
+def test_match_fields(config, matched):
+    assert Decoration(config).match(venmo("-1200.00")) is matched
+
+
+def test_amount_match_without_units():
+    tx = make_transaction(postings=[Posting("Assets:Cash", None, None, None, None, None)])
+    assert not Decoration({"min_amount": 0}).match(tx)
 
 
 def test_decorate_updates_fields(tx):

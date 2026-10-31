@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal
 import yaml
 from beancount.core.data import Posting, Transaction
 
@@ -69,12 +70,28 @@ class Decorator:
         return transaction
 
 
+def compile_optional(pattern):
+    return re.compile(pattern, flags=re.IGNORECASE) if pattern is not None else None
+
+
+def decimal_optional(value):
+    return Decimal(str(value)) if value is not None else None
+
+
 class Decoration:
+    matchers = ('re', 'narration_re', 'account_re', 'min_amount', 'max_amount')
+
     def __init__(self, decoration):
-        if 're' not in decoration:
-            raise ValueError("Decoration config must include 're' Regex field for matching payees.")
-        self.re = decoration['re']
-        self.rec = re.compile(self.re, flags=re.IGNORECASE)
+        if not any(key in decoration for key in self.matchers):
+            raise ValueError(f"Decoration config must include a matcher: {', '.join(self.matchers)}.")
+        # Matchers: every one given must match
+        self.re = decoration.get('re')
+        self.rec = compile_optional(self.re)
+        self.narration_rec = compile_optional(decoration.get('narration_re'))
+        self.account_rec = compile_optional(decoration.get('account_re'))
+        # Inclusive bounds on the first (imported) posting's number
+        self.min_amount = decimal_optional(decoration.get('min_amount'))
+        self.max_amount = decimal_optional(decoration.get('max_amount'))
 
         # Optional fields for decoration
         self.flag = decoration.get('flag')
@@ -88,9 +105,21 @@ class Decoration:
         self.target_account = decoration.get('target_account')
 
     def match(self, transaction):
-        if not transaction.payee:
+        if self.rec and not (transaction.payee and self.rec.search(transaction.payee)):
             return False
-        return self.rec.search(transaction.payee) is not None
+        if self.narration_rec and not (transaction.narration and self.narration_rec.search(transaction.narration)):
+            return False
+        if self.account_rec and not any(self.account_rec.search(p.account) for p in transaction.postings):
+            return False
+        if self.min_amount is not None or self.max_amount is not None:
+            units = transaction.postings[0].units if transaction.postings else None
+            if units is None or units.number is None:
+                return False
+            if self.min_amount is not None and units.number < self.min_amount:
+                return False
+            if self.max_amount is not None and units.number > self.max_amount:
+                return False
+        return True
 
     def decorate(self, transaction):
         if self.source_account:
