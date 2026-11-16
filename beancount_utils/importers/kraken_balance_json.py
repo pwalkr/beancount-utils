@@ -29,9 +29,16 @@ default_assets_map = {
 class Importer(beangulp.Importer):
     """An importer for Kraken Balance JSON Export."""
 
-    def __init__(self, base_account, assets_map=default_assets_map):
+    def __init__(self, base_account, assets_map=default_assets_map, drop_zero=True, zero_tolerance=Decimal('0.000001')):
+        """
+        Args:
+          drop_zero: Skip assets whose combined balance is within
+            zero_tolerance of zero, e.g. dust left after selling out.
+        """
         self.base_account = base_account
         self.assets_map = assets_map
+        self.drop_zero = drop_zero
+        self.zero_tolerance = zero_tolerance
 
     def identify(self, filepath):
         if not filepath.lower().endswith(".json"):
@@ -64,6 +71,8 @@ class Importer(beangulp.Importer):
         combined = self.combine_stakes(data['result'])
         for asset in sorted(combined.keys()):
             balance = combined[asset]
+            if self.drop_zero and abs(balance) < self.zero_tolerance:
+                continue
 
             meta = new_metadata(filepath, 0)
             account = f"{self.base_account}:{asset}"
