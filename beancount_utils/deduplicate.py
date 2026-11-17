@@ -1,6 +1,6 @@
 import datetime
 from decimal import Decimal
-from beancount.core import data
+from beancount.core import data, interpolate
 from beangulp.extract import DUPLICATE
 
 
@@ -172,14 +172,32 @@ def wrap_postings(entries, account, id_key=None):
     ]
 
 
+def inferred_units(entry):
+    """Units beancount would interpolate for the entry's single auto-balanced posting.
+
+    Extracted entries are not booked, so a posting a decorator added without
+    units (e.g. source_account) stays empty until the ledger is reloaded.
+    Returns None unless exactly one posting lacks units and the rest leave a
+    single-currency residual.
+    """
+    if sum(1 for p in entry.postings if p.units is None) != 1:
+        return None
+    residual = interpolate.compute_residual([p for p in entry.postings if p.units is not None])
+    positions = residual.get_positions()
+    if len(positions) != 1:
+        return None
+    return -positions[0].units
+
+
 class PostingWrapper():
     def __init__(self, posting, entry, id_key=None):
         self.posting = posting
         self.entry = entry
         self.date = entry.date
         self.account = posting.account
-        self.amount = posting.units.number if posting.units is not None else None
-        self.currency = posting.units.currency if posting.units is not None else None
+        units = posting.units if posting.units is not None else inferred_units(entry)
+        self.amount = units.number if units is not None else None
+        self.currency = units.currency if units is not None else None
         self.id = posting.meta.get(id_key) if id_key and posting.meta else None
         self._match = None
 

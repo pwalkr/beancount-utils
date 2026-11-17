@@ -66,6 +66,49 @@ def test_repeated_amounts_pair_by_id():
     assert [duplicate_of(e) for e in incoming] == [existing[1], existing[0]]
 
 
+# --- auto-balanced postings -----------------------------------------------
+
+
+CASH = "Assets:Cash"
+
+
+def with_auto_posting(entry, *auto_accounts):
+    """Add postings without units, as a source_account decoration does."""
+    for account in auto_accounts:
+        entry.postings.append(Posting(account, None, None, None, None, None))
+    return entry
+
+
+def test_matches_auto_balanced_posting():
+    """A transfer first extracted from the other account in the same run."""
+    existing = with_auto_posting(make_txn("6832.17", id="card", account="Liabilities:Card"), CASH)
+    incoming = make_txn("-6832.17", id="cash", account=CASH)
+    mark_duplicate_entries([incoming], [existing], CASH, id_key=ID_KEY)
+    assert duplicate_of(incoming) is existing
+
+
+@pytest.mark.parametrize(
+    "existing",
+    [
+        pytest.param(with_auto_posting(make_txn("6832.17", account="Liabilities:Card"), CASH, "Expenses:Other"),
+                     id="two-auto-postings"),
+        pytest.param(with_auto_posting(make_txn("6832.17", account="Liabilities:Card"), "Expenses:Other"),
+                     id="auto-posting-elsewhere"),
+    ],
+)
+def test_no_match_without_single_inferable_posting(existing):
+    incoming = make_txn("-6832.17", account=CASH)
+    mark_duplicate_entries([incoming], [existing], CASH)
+    assert duplicate_of(incoming) is None
+
+
+def test_inferred_amount_must_agree():
+    existing = with_auto_posting(make_txn("6832.17", account="Liabilities:Card"), CASH)
+    incoming = make_txn("-100.00", account=CASH)
+    mark_duplicate_entries([incoming], [existing], CASH)
+    assert duplicate_of(incoming) is None
+
+
 # --- extract_out_of_place -------------------------------------------------
 
 
