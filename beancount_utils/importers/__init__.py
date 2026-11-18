@@ -1,3 +1,4 @@
+import beancount_utils.importers.bofa_pdf
 import beancount_utils.importers.cigna_csv_claims
 import beancount_utils.importers.citi_ofx
 import beancount_utils.importers.fidelity_managed_pdf
