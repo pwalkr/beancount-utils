@@ -4,15 +4,28 @@ from beancount.core import data, interpolate
 from beangulp.extract import DUPLICATE
 
 
-def extract_out_of_place(existing, entries, account, window=datetime.timedelta(days=2), id_key=None):
+def extract_out_of_place(existing, entries, account, window=datetime.timedelta(days=2), id_key=None,
+                         start=None, end=None):
+    """Return ledger entries on account that the import does not account for.
+
+    Existing transactions dated within the import's range are matched one-to-one
+    against the imported postings. An entry with any unmatched posting on
+    account is cloned, tagged OUT_OF_PLACE and has those postings flagged
+    '!', even when its other postings matched: one entry can hold both a
+    real posting and a stray one. The range defaults to the first and last
+    imported transaction dates; pass start and end (inclusive) when the
+    source covers a known period, such as a statement.
+    """
     incoming_postings = wrap_postings(entries, account, id_key)
-    context = list(yield_context(existing, entries, account))
+    context = list(yield_context(existing, entries, account, start, end))
     context_postings = wrap_postings(context, account, id_key)
-    for posting, candidate in match_postings(context_postings, incoming_postings, window):
-        # Mark similar to beangulp.extract.mark_duplicate_entries
-        posting.entry.meta[DUPLICATE] = candidate.entry
+    # Consume the pairing; match() records each posting's counterpart.
+    for _ in match_postings(context_postings, incoming_postings, window):
+        pass
+    out_of_place = set()
     for posting in context_postings:
         if posting._match is None:
+            out_of_place.add(id(posting.entry))
             # Update flag. Can't update tuple so replace based on index
             for x, p in enumerate(posting.entry.postings):
                 if p is posting.posting:
@@ -20,7 +33,7 @@ def extract_out_of_place(existing, entries, account, window=datetime.timedelta(d
     return [
         entry._replace(tags=entry.tags.union({'OUT_OF_PLACE'}))
         for entry in context
-        if not entry.meta.pop(DUPLICATE, False)
+        if id(entry) in out_of_place
     ]
 
 
@@ -58,14 +71,15 @@ def warn_duplicate_import_id(account, existing, logger, meta_key='import_id'):
                     found_import_ids[posting.meta[meta_key]] = True
 
 
-def yield_context(existing, entries, account):
-    txns = list(data.filter_txns(entries))
-    if not txns:
-        return
-    open_date = txns[0].date
-    close_date = txns[-1].date
+def yield_context(existing, entries, account, start=None, end=None):
+    if start is None or end is None:
+        dates = [entry.date for entry in data.filter_txns(entries)]
+        if not dates:
+            return
+        start = min(dates) if start is None else start
+        end = max(dates) if end is None else end
     for entry in data.filter_txns(existing):
-        if entry.date >= open_date and entry.date <= close_date:
+        if start <= entry.date <= end:
             for posting in entry.postings:
                 if posting.account == account:
                     yield clone_transaction(entry)

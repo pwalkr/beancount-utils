@@ -145,3 +145,41 @@ def test_out_of_place_accepts_matching_id():
     incoming = [make_txn("-5", id="a")]
     existing = [make_txn("-5", id="a")]
     assert extract_out_of_place(existing, incoming, ACCOUNT, id_key=ID_KEY) == []
+
+
+@pytest.mark.parametrize("start_day, end_day, flagged", [
+    pytest.param(None, None, False, id="defaults-to-imported-dates"),
+    pytest.param(-3, 3, True, id="explicit-period-widens-range"),
+])
+def test_out_of_place_period(start_day, end_day, flagged):
+    """A ledger entry on a period day with no imported row is only seen within the period."""
+    incoming = [make_txn("-5")]
+    extra = make_txn("-9", days=2)
+    kwargs = {}
+    if start_day is not None:
+        kwargs = {"start": BASE_DATE + datetime.timedelta(days=start_day),
+                  "end": BASE_DATE + datetime.timedelta(days=end_day)}
+    out = extract_out_of_place([extra], incoming, ACCOUNT, **kwargs)
+    assert bool(out) is flagged
+
+
+def test_out_of_place_default_range_ignores_order():
+    incoming = [make_txn("-5", days=4), make_txn("-6")]
+    out = extract_out_of_place([make_txn("-9", days=2)], incoming, ACCOUNT)
+    assert len(out) == 1
+
+
+def test_out_of_place_reports_entry_with_one_stray_posting():
+    """A transfer booked twice: one entry holds a matched and a stray posting."""
+    def entry(day, *numbers):
+        postings = [Posting(ACCOUNT, Amount(Decimal(n), "USD"), None, None, None, {}) for n in numbers]
+        return Transaction({"filename": "ledger", "lineno": 0}, BASE_DATE + datetime.timedelta(days=day),
+                           "*", "", "", frozenset(), frozenset(), postings)
+
+    incoming = [make_txn("618.55", days=2), make_txn("-618.55", days=4)]
+    combined = entry(0, "618.55", "-618.55")  # deposit + transfer out, dated early
+    transfer = entry(6, "-618.55")            # the same transfer out, booked again
+    out = extract_out_of_place([combined, transfer], incoming, ACCOUNT,
+                               start=BASE_DATE, end=BASE_DATE + datetime.timedelta(days=6))
+    assert len(out) == 1
+    assert [p.flag for p in out[0].postings] == [None, "!"]
