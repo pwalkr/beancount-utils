@@ -2,5 +2,4 @@ beancount
 beangulp
 ofxtools
 pdfplumber
-pypdf
 pytest
