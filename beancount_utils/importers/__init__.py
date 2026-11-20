@@ -8,6 +8,7 @@ import beancount_utils.importers.kraken_balance_json
 import beancount_utils.importers.kraken_ledger_json
 import beancount_utils.importers.merrill_csv
 import beancount_utils.importers.merrill_pdf
+import beancount_utils.importers.par_health_pdf
 import beancount_utils.importers.simplefin
 import beancount_utils.importers.singlefin
 import beancount_utils.importers.transamerica_pdf
